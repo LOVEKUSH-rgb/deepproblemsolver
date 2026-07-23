@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "envfix"
+version = "0.1.0"
+description = "CLI tool that diagnoses and auto-fixes Python/ML environment errors using a local LLM."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+dependencies = [
+    "typer[all]>=0.12",   # includes rich for pretty output
+    "ollama>=0.2",
+]
+
+[project.scripts]
+envfix = "envfix.main:app"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["envfix*"]
