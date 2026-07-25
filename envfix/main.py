@@ -21,29 +21,48 @@ app = typer.Typer(
 console = Console()
 
 
-@app.command()
+@app.command(
+    # ignore_unknown_options + allow_extra_args means flags like -m, -c, --gpu
+    # inside the user's shell command are NEVER consumed by Typer's own parser.
+    context_settings={"ignore_unknown_options": True, "allow_extra_args": True},
+)
 def run(
-    command: List[str] = typer.Argument(..., help="The shell command to run."),
+    ctx: typer.Context,
     model: str = typer.Option(
         "llama3.1:8b",
-        "--model",
-        "-m",
+        "--model",           # only --model works; -m is intentionally removed
         help="Ollama model tag to use for diagnosis.",
+        show_default=True,
     ),
 ) -> None:
     """
     Run COMMAND. If it fails, diagnose the error with a local LLM,
     propose a fix, and (with your approval) apply it and retry.
 
-    The command can be passed quoted or unquoted:
+    Everything after [OPTIONS] is treated as the command to run:
 
-        envfix run "python -m pip install torch"
-
+    \b
         envfix run python -m pip install torch
+        envfix run "python -c 'import torch'"
+        envfix run python train.py --gpu 0
+        envfix run --model qwen2.5:3b python train.py
     """
-    # Join all tokens into a single shell command string.
-    # This handles PowerShell stripping outer quotes and splitting on spaces.
-    cmd = " ".join(command)
+    # ctx.args holds tokens Typer did NOT consume as its own option.
+    # Typer 0.27 bug: with allow_extra_args=True the subcommand name ("run")
+    # leaks as ctx.args[0]. Strip it so we don't execute "run python -m ..."
+    args = list(ctx.args)
+    if args and args[0] == "run":
+        args.pop(0)
+    cmd = " ".join(args)
+
+    if not cmd.strip():
+        console.print(
+            "[bold red]Error:[/bold red] No command provided.\n"
+            "Usage:  [bold]envfix run[/bold] [OPTIONS] COMMAND...\n"
+            "Example:[bold] envfix run python -m pip install torch[/bold]"
+        )
+        raise typer.Exit(code=1)
+
     # ── Step 1: Run the original command ─────────────────────────────────
     console.print(f"\n[bold cyan]▶ Running:[/bold cyan] {cmd}\n")
     stdout, stderr, returncode = run_command(cmd)
