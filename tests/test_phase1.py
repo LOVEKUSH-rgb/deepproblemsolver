@@ -12,7 +12,7 @@ import tempfile
 import pytest
 
 # ── ai.py parser tests (no real Ollama call needed) ──────────────────────────
-from envfix.ai import _parse_response
+from envfix.ai import _parse_response, _clean_fix
 
 
 class TestParseResponse:
@@ -91,6 +91,41 @@ class TestRunCommand:
     def test_nonexistent_command(self):
         _, _, rc = run_command("this_command_absolutely_does_not_exist_xyz")
         assert rc != 0
+
+
+# ── _clean_fix tests ──────────────────────────────────────────────────────────
+class TestCleanFix:
+    def test_strips_single_backtick(self):
+        assert _clean_fix("`pip install torch`") == "pip install torch"
+
+    def test_strips_triple_backtick(self):
+        assert _clean_fix("```pip install torch```") == "pip install torch"
+
+    def test_strips_surrounding_double_quotes(self):
+        assert _clean_fix('"pip install torch"') == "pip install torch"
+
+    def test_strips_surrounding_single_quotes(self):
+        assert _clean_fix("'pip install torch'") == "pip install torch"
+
+    def test_strips_bold_markdown(self):
+        assert _clean_fix("**pip install torch**") == "pip install torch"
+
+    def test_plain_command_unchanged(self):
+        assert _clean_fix("pip install torch") == "pip install torch"
+
+    def test_backtick_with_spaces(self):
+        assert _clean_fix("  `python -m pip install torch`  ") == "python -m pip install torch"
+
+    def test_no_strip_inner_backticks(self):
+        # Inner backticks (e.g. in a path) should NOT be stripped
+        result = _clean_fix("pip install my-pkg")
+        assert result == "pip install my-pkg"
+
+    def test_parser_strips_backtick_end_to_end(self):
+        raw = "DIAGNOSIS: Missing module.\nFIX: `pip install numpy`"
+        r = _parse_response(raw)
+        assert r.parsed_ok is True
+        assert r.fix == "pip install numpy"   # no backticks
 
 
 # ── logger.py tests ───────────────────────────────────────────────────────────

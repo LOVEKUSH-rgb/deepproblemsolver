@@ -17,7 +17,13 @@ PROMPT_TEMPLATE = (
     "then give exactly ONE shell command that would likely fix it. "
     "Respond in this exact format:\n"
     "DIAGNOSIS: <text>\n"
-    "FIX: <command>"
+    "FIX: <command>\n\n"
+    "IMPORTANT: The FIX line must contain a plain shell command with NO backticks, "
+    "NO markdown formatting, and NO surrounding quotes. "
+    "Example of correct format:\n"
+    "FIX: pip install torch\n"
+    "Example of WRONG format (do not do this):\n"
+    "FIX: `pip install torch`"
 )
 
 DEFAULT_MODEL = "llama3.1:8b"
@@ -92,7 +98,7 @@ def _parse_response(raw: str) -> DiagnosisResult:
     )
     if strict:
         diagnosis = strict.group(1).strip()
-        fix = strict.group(2).strip().splitlines()[0].strip()  # first line only
+        fix = _clean_fix(strict.group(2).strip().splitlines()[0].strip())
         return DiagnosisResult(
             diagnosis=diagnosis, fix=fix, raw_response=raw, parsed_ok=True
         )
@@ -109,7 +115,7 @@ def _parse_response(raw: str) -> DiagnosisResult:
 
     if diagnosis and fix:
         return DiagnosisResult(
-            diagnosis=diagnosis, fix=fix, raw_response=raw, parsed_ok=True
+            diagnosis=diagnosis, fix=_clean_fix(fix), raw_response=raw, parsed_ok=True
         )
 
     # --- Fallback: show raw output, don't crash ---
@@ -119,3 +125,25 @@ def _parse_response(raw: str) -> DiagnosisResult:
         raw_response=raw,
         parsed_ok=False,
     )
+
+
+def _clean_fix(fix: str) -> str:
+    """
+    Strip markdown/shell formatting artefacts from the fix command.
+
+    LLMs often wrap commands in backticks (`` `cmd` ``) or fenced code blocks.
+    Running `` `pip install torch` `` on Windows will fail because the backtick
+    is not a valid shell character there.
+    """
+    # Strip surrounding backticks: `cmd` → cmd  or ```cmd``` → cmd
+    fix = fix.strip()
+    fix = re.sub(r'^`+|`+$', '', fix).strip()
+    # Strip surrounding single or double quotes added by the model
+    if (fix.startswith('"') and fix.endswith('"')) or \
+       (fix.startswith("'") and fix.endswith("'")):
+        fix = fix[1:-1].strip()
+    # Strip inline note after the command separated by ' (' e.g.:
+    # "pip install torch (Linux only)" → keep the whole thing as-is
+    # but strip markdown emphasis like *cmd* or **cmd**
+    fix = re.sub(r'^\*+|\*+$', '', fix).strip()
+    return fix
