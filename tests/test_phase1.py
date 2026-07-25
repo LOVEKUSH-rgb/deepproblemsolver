@@ -21,13 +21,13 @@ class TestParseResponse:
         r = _parse_response(raw)
         assert r.parsed_ok is True
         assert "CUDA" in r.diagnosis
-        assert "pip install" in r.fix
+        assert r.fix == "python -m pip install torch==2.0.0+cu118"
 
     def test_case_insensitive(self):
         raw = "diagnosis: missing package\nfix: pip install numpy"
         r = _parse_response(raw)
         assert r.parsed_ok is True
-        assert r.fix == "pip install numpy"
+        assert r.fix == "python -m pip install numpy"
 
     def test_extra_whitespace(self):
         raw = "DIAGNOSIS:   broken venv   \nFIX:   python -m venv .venv   "
@@ -45,6 +45,7 @@ class TestParseResponse:
         r = _parse_response(raw)
         assert r.parsed_ok is True
         assert "torch" in r.fix
+        assert r.fix.startswith("python -m pip")
 
     def test_unparseable_falls_back_gracefully(self):
         raw = "I'm sorry, I don't understand the question."
@@ -64,7 +65,7 @@ class TestParseResponse:
         raw = "DIAGNOSIS: broken\nFIX: pip install torch\nAlso you might want to..."
         r = _parse_response(raw)
         assert r.parsed_ok is True
-        assert r.fix == "pip install torch"
+        assert r.fix == "python -m pip install torch"
 
 
 # ── runner.py tests ───────────────────────────────────────────────────────────
@@ -96,36 +97,42 @@ class TestRunCommand:
 # ── _clean_fix tests ──────────────────────────────────────────────────────────
 class TestCleanFix:
     def test_strips_single_backtick(self):
-        assert _clean_fix("`pip install torch`") == "pip install torch"
+        assert _clean_fix("`pip install torch`") == "python -m pip install torch"
 
     def test_strips_triple_backtick(self):
-        assert _clean_fix("```pip install torch```") == "pip install torch"
+        assert _clean_fix("```pip install torch```") == "python -m pip install torch"
 
     def test_strips_surrounding_double_quotes(self):
-        assert _clean_fix('"pip install torch"') == "pip install torch"
+        assert _clean_fix('"pip install torch"') == "python -m pip install torch"
 
     def test_strips_surrounding_single_quotes(self):
-        assert _clean_fix("'pip install torch'") == "pip install torch"
+        assert _clean_fix("'pip install torch'") == "python -m pip install torch"
 
     def test_strips_bold_markdown(self):
-        assert _clean_fix("**pip install torch**") == "pip install torch"
+        assert _clean_fix("**pip install torch**") == "python -m pip install torch"
 
-    def test_plain_command_unchanged(self):
-        assert _clean_fix("pip install torch") == "pip install torch"
+    def test_plain_pip_normalised(self):
+        assert _clean_fix("pip install torch") == "python -m pip install torch"
+
+    def test_python_m_pip_unchanged(self):
+        assert _clean_fix("python -m pip install torch") == "python -m pip install torch"
 
     def test_backtick_with_spaces(self):
         assert _clean_fix("  `python -m pip install torch`  ") == "python -m pip install torch"
 
+    def test_non_pip_command_unchanged(self):
+        assert _clean_fix("python -m venv .venv") == "python -m venv .venv"
+
     def test_no_strip_inner_backticks(self):
         # Inner backticks (e.g. in a path) should NOT be stripped
         result = _clean_fix("pip install my-pkg")
-        assert result == "pip install my-pkg"
+        assert result == "python -m pip install my-pkg"
 
     def test_parser_strips_backtick_end_to_end(self):
         raw = "DIAGNOSIS: Missing module.\nFIX: `pip install numpy`"
         r = _parse_response(raw)
         assert r.parsed_ok is True
-        assert r.fix == "pip install numpy"   # no backticks
+        assert r.fix == "python -m pip install numpy"  # backticks stripped + pip normalised
 
 
 # ── logger.py tests ───────────────────────────────────────────────────────────

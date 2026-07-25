@@ -21,6 +21,27 @@ app = typer.Typer(
 console = Console()
 
 
+def _quote_join(tokens: List[str]) -> str:
+    """
+    Join command tokens back into a shell string, re-quoting any token
+    that contains spaces with double quotes.
+
+    PowerShell strips quotes when it passes arguments, so:
+        envfix run python -c "import torch"
+    arrives as tokens: ["python", "-c", "import torch"]
+
+    Without re-quoting we'd produce: python -c import torch  (SyntaxError).
+    With re-quoting we produce:      python -c "import torch"  (correct).
+    """
+    parts = []
+    for tok in tokens:
+        if " " in tok:
+            # Escape any embedded double quotes, then wrap in double quotes.
+            tok = '"' + tok.replace('"', '\\"') + '"'
+        parts.append(tok)
+    return " ".join(parts)
+
+
 @app.command(
     # ignore_unknown_options + allow_extra_args means flags like -m, -c, --gpu
     # inside the user's shell command are NEVER consumed by Typer's own parser.
@@ -53,7 +74,10 @@ def run(
     args = list(ctx.args)
     if args and args[0] == "run":
         args.pop(0)
-    cmd = " ".join(args)
+    # Re-quote any token that contains spaces so that e.g.
+    # ["python", "-c", "import torch"] → 'python -c "import torch"'
+    # instead of 'python -c import torch' (which is a syntax error).
+    cmd = _quote_join(args)
 
     if not cmd.strip():
         console.print(

@@ -11,19 +11,20 @@ except ImportError:  # pragma: no cover
 
 
 PROMPT_TEMPLATE = (
-    "You are diagnosing a Python/ML environment error. "
+    "You are diagnosing a Python/ML environment error on a Windows machine. "
     "Here is the error output:\n{stderr}\n\n"
     "Give a short diagnosis (1-2 sentences) of the root cause, "
     "then give exactly ONE shell command that would likely fix it. "
     "Respond in this exact format:\n"
     "DIAGNOSIS: <text>\n"
     "FIX: <command>\n\n"
-    "IMPORTANT: The FIX line must contain a plain shell command with NO backticks, "
-    "NO markdown formatting, and NO surrounding quotes. "
-    "Example of correct format:\n"
-    "FIX: pip install torch\n"
-    "Example of WRONG format (do not do this):\n"
-    "FIX: `pip install torch`"
+    "IMPORTANT rules for the FIX command:\n"
+    "- Use 'python -m pip install ...' instead of 'pip install ...' (pip may not be on PATH on Windows)\n"
+    "- NO backticks, NO markdown formatting, NO surrounding quotes around the command\n"
+    "- Give a single runnable shell command only\n"
+    "Example correct format:\n"
+    "DIAGNOSIS: The torch package is not installed.\n"
+    "FIX: python -m pip install torch"
 )
 
 DEFAULT_MODEL = "llama3.1:8b"
@@ -129,11 +130,15 @@ def _parse_response(raw: str) -> DiagnosisResult:
 
 def _clean_fix(fix: str) -> str:
     """
-    Strip markdown/shell formatting artefacts from the fix command.
+    Strip markdown/shell formatting artefacts from the fix command and
+    normalise Windows-incompatible patterns.
 
     LLMs often wrap commands in backticks (`` `cmd` ``) or fenced code blocks.
     Running `` `pip install torch` `` on Windows will fail because the backtick
     is not a valid shell character there.
+
+    Also replaces bare 'pip install' with 'python -m pip install' because pip
+    is often not on the Windows PATH even when python is.
     """
     # Strip surrounding backticks: `cmd` → cmd  or ```cmd``` → cmd
     fix = fix.strip()
@@ -142,8 +147,8 @@ def _clean_fix(fix: str) -> str:
     if (fix.startswith('"') and fix.endswith('"')) or \
        (fix.startswith("'") and fix.endswith("'")):
         fix = fix[1:-1].strip()
-    # Strip inline note after the command separated by ' (' e.g.:
-    # "pip install torch (Linux only)" → keep the whole thing as-is
-    # but strip markdown emphasis like *cmd* or **cmd**
+    # Strip markdown emphasis like *cmd* or **cmd**
     fix = re.sub(r'^\*+|\*+$', '', fix).strip()
+    # Replace bare 'pip' with 'python -m pip' so it works when pip is not on PATH
+    fix = re.sub(r'^pip\b', 'python -m pip', fix)
     return fix
