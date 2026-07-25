@@ -1,7 +1,7 @@
 """main.py — Typer CLI entry point for envfix."""
 
 import sys
-from typing import Optional
+from typing import List, Optional
 
 import typer
 from rich.console import Console
@@ -23,7 +23,7 @@ console = Console()
 
 @app.command()
 def run(
-    command: str = typer.Argument(..., help="The shell command to run (quoted)."),
+    command: List[str] = typer.Argument(..., help="The shell command to run."),
     model: str = typer.Option(
         "llama3.1:8b",
         "--model",
@@ -34,10 +34,19 @@ def run(
     """
     Run COMMAND. If it fails, diagnose the error with a local LLM,
     propose a fix, and (with your approval) apply it and retry.
+
+    The command can be passed quoted or unquoted:
+
+        envfix run "python -m pip install torch"
+
+        envfix run python -m pip install torch
     """
+    # Join all tokens into a single shell command string.
+    # This handles PowerShell stripping outer quotes and splitting on spaces.
+    cmd = " ".join(command)
     # ── Step 1: Run the original command ─────────────────────────────────
-    console.print(f"\n[bold cyan]▶ Running:[/bold cyan] {command}\n")
-    stdout, stderr, returncode = run_command(command)
+    console.print(f"\n[bold cyan]▶ Running:[/bold cyan] {cmd}\n")
+    stdout, stderr, returncode = run_command(cmd)
 
     if stdout:
         console.print(stdout, end="")
@@ -75,7 +84,7 @@ def run(
         )
         console.print(Panel(result.raw_response, border_style="yellow", expand=False))
         log_attempt(
-            command=command,
+            command=cmd,
             stderr=error_text,
             diagnosis=result.diagnosis,
             fix=result.fix,
@@ -104,7 +113,7 @@ def run(
     if not approved:
         console.print("[dim]Exiting without changes.[/dim]")
         log_attempt(
-            command=command,
+            command=cmd,
             stderr=error_text,
             diagnosis=result.diagnosis,
             fix=result.fix,
@@ -128,7 +137,7 @@ def run(
             f"(exit code {fix_rc}). Aborting retry.[/bold red]"
         )
         log_attempt(
-            command=command,
+            command=cmd,
             stderr=error_text,
             diagnosis=result.diagnosis,
             fix=result.fix,
@@ -138,9 +147,9 @@ def run(
         raise typer.Exit(code=1)
 
     console.print(
-        f"\n[bold cyan]🔄 Re-running original command:[/bold cyan] {command}\n"
+        f"\n[bold cyan]🔄 Re-running original command:[/bold cyan] {cmd}\n"
     )
-    retry_stdout, retry_stderr, retry_rc = run_command(command)
+    retry_stdout, retry_stderr, retry_rc = run_command(cmd)
 
     if retry_stdout:
         console.print(retry_stdout, end="")
@@ -162,7 +171,7 @@ def run(
 
     # ── Step 8: Log everything ────────────────────────────────────────────
     log_attempt(
-        command=command,
+        command=cmd,
         stderr=error_text,
         diagnosis=result.diagnosis,
         fix=result.fix,
