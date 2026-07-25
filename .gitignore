@@ -1,4 +1,4 @@
-# Python
+# ── Python ───────────────────────────────────────────────────────────────────
 __pycache__/
 *.py[cod]
 *.pyo
@@ -8,26 +8,30 @@ __pycache__/
 dist/
 build/
 .eggs/
+MANIFEST
 
-# Virtual environments
+# ── Virtual environments ──────────────────────────────────────────────────────
 .venv/
 venv/
 env/
+.env
 
-# Test / coverage
+# ── Test / coverage ───────────────────────────────────────────────────────────
 .pytest_cache/
 .coverage
 htmlcov/
+.tox/
 
-# envfix runtime output
+# ── envfix runtime files — keep personal logs out of version control ──────────
 envfix_log.json
 
-# IDE
+# ── IDE ───────────────────────────────────────────────────────────────────────
 .vscode/
 .idea/
 *.sublime-project
 *.sublime-workspace
 
-# OS
+# ── OS ────────────────────────────────────────────────────────────────────────
 .DS_Store
 Thumbs.db
+desktop.ini

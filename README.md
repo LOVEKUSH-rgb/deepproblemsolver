@@ -2,22 +2,9 @@
 
 > **Automatically diagnose and fix Python/ML environment errors using a local LLM — fully offline, no paid API.**
 
-When your `pip install`, PyTorch import, or CUDA setup fails, `envfix` catches the error, asks a local Ollama model what went wrong, proposes a one-liner fix, waits for your approval, runs it, and tells you if the original command now works.
+When your `pip install`, PyTorch import, or CUDA setup fails, `envfix` catches the error, asks a local [Ollama](https://ollama.com) model what went wrong, proposes a one-liner fix, waits for your approval, runs it, and tells you if the original command now works.
 
----
-
-## Table of Contents
-
-1. [Prerequisites](#prerequisites)
-2. [Install Ollama](#1-install-ollama)
-3. [Pull the model](#2-pull-the-model)
-4. [Start the Ollama service](#3-start-the-ollama-service)
-5. [Install envfix](#4-install-envfix)
-6. [Usage](#usage)
-7. [How it works](#how-it-works)
-8. [Log file](#log-file)
-9. [Running tests](#running-tests)
-10. [Troubleshooting](#troubleshooting)
+> ⚠️ **Early / experimental** — built for Python/ML environment errors. Feedback welcome via [GitHub Issues](https://github.com/LOVEKUSH-rgb/deepproblemsolver/issues).
 
 ---
 
@@ -26,92 +13,65 @@ When your `pip install`, PyTorch import, or CUDA setup fails, `envfix` catches t
 | Requirement | Version |
 |---|---|
 | Python | ≥ 3.10 |
-| pip | latest recommended |
-| Ollama | latest |
-| RAM | ≥ 8 GB (for `llama3.1:8b`) or ≥ 4 GB (for `qwen2.5:3b`) |
+| [Ollama](https://ollama.com/download) | latest |
+| RAM | ≥ 8 GB for `llama3.1:8b`  ·  ≥ 4 GB for `qwen2.5:3b` |
 
 ---
 
-## 1. Install Ollama
+## Install
 
-**Windows / macOS / Linux** — download the installer from:
+### Step 1 — Install Ollama
 
-```
-https://ollama.com/download
-```
+Download from **[ollama.com/download](https://ollama.com/download)** (Windows / macOS / Linux).
 
-Or on Linux via the one-liner:
+On Linux you can also run:
 
 ```bash
 curl -fsSL https://ollama.com/install.sh | sh
 ```
 
----
-
-## 2. Pull the model
-
-After installing Ollama, pull whichever model fits your hardware:
+### Step 2 — Pull a model
 
 ```bash
 # Recommended (needs ~8 GB RAM)
 ollama pull llama3.1:8b
 
-# Lighter alternatives (≥4 GB RAM)
+# Lighter alternatives (≥ 4 GB RAM)
 ollama pull qwen2.5:3b
 ollama pull llama3.2:3b
 ```
 
----
-
-## 3. Start the Ollama service
-
-Ollama must be running in the background before you use `envfix`.
+### Step 3 — Start the Ollama service
 
 ```bash
 ollama serve
 ```
 
-> **Tip:** On Windows, the Ollama installer adds a system tray icon that starts the service automatically on login.
+> **Windows tip:** The Ollama installer adds a system-tray icon that starts the service automatically on login — you can skip this step.
 
----
-
-## 4. Install envfix
-
-Clone the repo and install in editable mode so the `envfix` command is registered globally (or in your active venv):
+### Step 4 — Install envfix
 
 ```bash
-git clone https://github.com/<your-username>/envfix.git
-cd envfix
+git clone https://github.com/LOVEKUSH-rgb/deepproblemsolver.git
+cd deepproblemsolver
 pip install -e .
 ```
 
-This installs two Python dependencies automatically:
-- `typer[all]` — CLI framework + Rich for pretty terminal output
-- `ollama` — Python client for the local Ollama service
+That's it. The `envfix` command is now available globally (or inside your active venv).
 
 ---
 
 ## Usage
 
 ```
-envfix run "<your failing command>"
+envfix run <your failing command>
 ```
 
-### Examples
+### Basic example
 
 ```bash
-# Basic usage — wrap any failing command in quotes
-envfix run "python -c 'import torch; print(torch.cuda.is_available())'"
-
-# Works with pip, conda-style commands, script runs, etc.
-envfix run "pip install -r requirements.txt"
-envfix run "python train.py --gpu 0"
-
-# Use a lighter model if your hardware is limited
-envfix run "python setup_check.py" --model qwen2.5:3b
+envfix run python train.py --gpu 0
 ```
-
-### What you'll see
 
 ```
 ▶ Running: python train.py --gpu 0
@@ -129,84 +89,130 @@ envfix run "python setup_check.py" --model qwen2.5:3b
 │ driver version on this machine.                │
 │                                                │
 │ FIX                                            │
-│ pip install torch --index-url                  │
+│ python -m pip install torch --index-url        │
 │ https://download.pytorch.org/whl/cu118         │
 ╰────────────────────────────────────────────────╯
 
-Run this fix? [y/N]:
+📋 What this will do: Installs a package from PyPI
+
+Run this fix? [y/n] (n):
 ```
+
+### More examples
+
+```bash
+# Missing module
+envfix run python -m non_existent_module_xyz
+
+# Broken requirements file
+envfix run python -m pip install -r requirements.txt
+
+# Use a lighter model
+envfix run python train.py --model qwen2.5:3b
+
+# View past attempts
+envfix history
+envfix history --last 5
+```
+
+### Command reference
+
+| Command | What it does |
+|---|---|
+| `envfix run <cmd>` | Run a command; diagnose + propose fix if it fails |
+| `envfix run <cmd> --model <tag>` | Use a specific Ollama model |
+| `envfix history` | Show the last 20 attempts from `envfix_log.json` |
+| `envfix history --last N` | Show last N attempts |
+| `envfix --help` | Full help |
 
 ---
 
 ## How it works
 
 ```
-envfix run "cmd"
+envfix run <cmd>
      │
      ▼
-Run cmd via subprocess
+ Run cmd via subprocess
      │
-  failed? ──No──► exit 0 (all good)
+  succeeded? ──Yes──► ✓ Nothing to fix
+     │
+    No
+     ▼
+ Check envfix_log.json for a similar past error (fuzzy match ≥ 85%)
+     │
+  Cache hit? ──Yes──► Show cached fix (skip model call)
+     │
+    No
+     ▼
+ Send stderr to Ollama with a structured prompt
+     │
+     ▼
+ Parse DIAGNOSIS + FIX from the response
+     │
+     ▼
+ Show dry-run description for risky commands (rm, setx, sudo …)
+     │
+     ▼
+ Ask "Run this fix? [y/n]"
      │
     Yes
      ▼
-Send stderr to Ollama with structured prompt
+ Apply fix → re-run original command
      │
      ▼
-Parse DIAGNOSIS + FIX from response
-     │
-     ▼
-Display to user → ask "Run this fix? (y/n)"
-     │
-    Yes
-     ▼
-Run the fix command
-     │
-     ▼
-Re-run original command
-     │
-     ▼
-Report success/failure + write to envfix_log.json
+ Report success/failure + write to envfix_log.json
 ```
 
 ---
 
 ## Log file
 
-Every attempt (whether approved or not) is recorded to `envfix_log.json` in the directory where you run `envfix`. Each entry looks like:
+Every attempt is recorded to `envfix_log.json` in the directory where you run `envfix`. The file is excluded from git via `.gitignore` so your personal error history never gets committed.
+
+Each entry looks like:
 
 ```json
 {
-  "timestamp": "2026-07-23T17:45:00+00:00",
-  "command": "python train.py",
-  "stderr": "ModuleNotFoundError: No module named 'torch'",
+  "timestamp": "2026-07-25T14:45:00Z",
+  "original_command": "python train.py --gpu 0",
+  "error_text": "ModuleNotFoundError: No module named 'torch'",
   "diagnosis": "PyTorch is not installed in this environment.",
-  "fix": "pip install torch",
-  "approved": true,
-  "worked": true
+  "fix_command": "python -m pip install torch",
+  "user_approved": true,
+  "fix_worked": true,
+  "source": "ollama"
 }
 ```
 
 | Field | Meaning |
 |---|---|
-| `approved` | Did you say **y** to the fix? |
-| `worked` | Did the original command succeed after the fix? |
-| `worked: null` | Fix was not approved (no re-run attempted) |
+| `user_approved` | Did you say **y** to the fix? |
+| `fix_worked` | Did the original command succeed after the fix? |
+| `fix_worked: null` | Fix was not approved — no retry attempted |
+| `source` | `"ollama"` = fresh model call  ·  `"cache"` = reused from log |
 
 ---
 
 ## Running tests
 
 ```bash
-# From the repo root
-pip install pytest
-python -m pytest tests/test_phase1.py -v
+# From the repo root — no Ollama needed
+python -m pip install pytest
+python -m pytest tests/ -v
 ```
 
-The test suite does **not** require Ollama to be running. It tests:
-- The AI response parser (7 cases including edge cases)
-- The subprocess runner (4 cases)
-- The JSON logger (4 cases including corrupt-file recovery)
+The test suite (55 tests across 2 files) covers:
+
+| Module | Tests |
+|---|---|
+| AI response parser | Strict format, case, whitespace, fallback |
+| `_clean_fix()` normaliser | Backtick stripping, `pip` → `python -m pip` |
+| Subprocess runner | Success, failure, stderr capture, bad commands |
+| JSON logger | Schema, appending, corrupt-file recovery |
+| Known-fix cache | Exact match, fuzzy match, Phase 1 compat, tier priority |
+| Dry-run preview | Safe vs risky command classification |
+| History reader | Ordering, Phase 1 normalisation, key presence |
 
 ---
 
@@ -215,21 +221,25 @@ The test suite does **not** require Ollama to be running. It tests:
 | Symptom | Fix |
 |---|---|
 | `Error reaching Ollama: Connection refused` | Run `ollama serve` in a separate terminal |
-| `model not found` | Run `ollama pull llama3.1:8b` (or your chosen model) |
+| `model "llama3.1:8b" not found` | Run `ollama pull llama3.1:8b` |
 | `envfix: command not found` | Run `pip install -e .` from the repo root |
 | Model returns garbled output | Try `--model qwen2.5:3b`; raw output is shown instead of crashing |
+| `'pip' is not recognized` | Always use `python -m pip install …` on Windows |
 | Fix runs but original still fails | The LLM diagnosis was wrong — try running again or fix manually |
 
 ---
 
-## Future phases (not yet built)
+## Roadmap
 
-- **Phase 2:** Dry-run preview before applying fixes; cache known error→fix pairs locally
-- **Phase 3:** Share fix stats with classmates; track repeat usage
-- **Phase 4:** Expand beyond Python/ML; per-user memory
+| Phase | Status |
+|---|---|
+| Phase 1 — Core loop: run → diagnose → fix → retry | ✅ Done |
+| Phase 2 — Cache, dry-run preview, history command | ✅ Done |
+| Phase 3 — Distribution, README, pyproject.toml | ✅ Done |
+| Phase 4 — Multi-user memory, non-Python/ML errors | 🔜 Planned |
 
 ---
 
 ## License
 
-MIT
+MIT — see [LICENSE](LICENSE) or use freely.

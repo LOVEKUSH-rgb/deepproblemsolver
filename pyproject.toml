@@ -4,19 +4,40 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "envfix"
-version = "0.1.0"
+version = "0.2.0"
 description = "CLI tool that diagnoses and auto-fixes Python/ML environment errors using a local LLM."
 readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "MIT" }
-dependencies = [
-    "typer[all]>=0.12",   # includes rich for pretty output
-    "ollama>=0.2",
+keywords = ["cli", "llm", "ollama", "python", "environment", "debugging"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Software Development :: Debuggers",
 ]
+dependencies = [
+    "typer[all]>=0.12",   # CLI framework + Rich for pretty terminal output
+    "ollama>=0.2",        # Python client for the local Ollama service
+]
+
+[project.urls]
+Homepage   = "https://github.com/LOVEKUSH-rgb/deepproblemsolver"
+Repository = "https://github.com/LOVEKUSH-rgb/deepproblemsolver"
+"Bug Tracker" = "https://github.com/LOVEKUSH-rgb/deepproblemsolver/issues"
 
 [project.scripts]
 envfix = "envfix.main:app"
 
 [tool.setuptools.packages.find]
-where = ["."]
+where   = ["."]
 include = ["envfix*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
