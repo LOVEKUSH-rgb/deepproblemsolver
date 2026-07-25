@@ -1,16 +1,20 @@
-"""main.py — Typer CLI entry point for envfix."""
+"""main.py — Typer CLI entry point for envfix (Phase 2)."""
 
 import sys
+from datetime import datetime, timezone
 from typing import List, Optional
 
 import typer
 from rich.console import Console
 from rich.panel import Panel
 from rich.prompt import Confirm
+from rich.table import Table
 from rich.text import Text
 
 from envfix.ai import get_diagnosis
-from envfix.logger import log_attempt
+from envfix.cache import find_cached_fix
+from envfix.logger import LOG_FILE, get_history, log_attempt
+from envfix.preview import get_fix_preview
 from envfix.runner import run_command
 
 app = typer.Typer(
@@ -20,6 +24,8 @@ app = typer.Typer(
 )
 console = Console()
 
+
+# ── Helpers ───────────────────────────────────────────────────────────────────
 
 def _quote_join(tokens: List[str]) -> str:
     """
@@ -36,54 +42,75 @@ def _quote_join(tokens: List[str]) -> str:
     parts = []
     for tok in tokens:
         if " " in tok:
-            # Escape any embedded double quotes, then wrap in double quotes.
             tok = '"' + tok.replace('"', '\\"') + '"'
         parts.append(tok)
     return " ".join(parts)
 
 
+def _show_fix_panel(
+    diagnosis: str,
+    fix: str,
+    source: str,
+    cache_score: Optional[float] = None,
+) -> None:
+    """Render the DIAGNOSIS + FIX suggestion panel."""
+    source_tag = (
+        f"[dim] (from cache — {cache_score:.0%} match)[/dim]"
+        if source == "cache" and cache_score is not None
+        else ""
+    )
+    console.print(
+        Panel(
+            Text.assemble(
+                ("DIAGNOSIS\n", "bold magenta"),
+                (diagnosis + "\n\n", "white"),
+                ("FIX\n", "bold cyan"),
+                (fix, "bold white"),
+            ),
+            title=f"[bold]envfix Suggestion[/bold]{source_tag}",
+            border_style="cyan",
+            expand=False,
+        )
+    )
+
+
+# ── Commands ──────────────────────────────────────────────────────────────────
+
 @app.command(
-    # ignore_unknown_options + allow_extra_args means flags like -m, -c, --gpu
-    # inside the user's shell command are NEVER consumed by Typer's own parser.
     context_settings={"ignore_unknown_options": True, "allow_extra_args": True},
 )
 def run(
     ctx: typer.Context,
     model: str = typer.Option(
         "llama3.1:8b",
-        "--model",           # only --model works; -m is intentionally removed
+        "--model",
         help="Ollama model tag to use for diagnosis.",
         show_default=True,
     ),
 ) -> None:
     """
-    Run COMMAND. If it fails, diagnose the error with a local LLM,
+    Run COMMAND. If it fails, diagnose the error with a local LLM (or cache),
     propose a fix, and (with your approval) apply it and retry.
 
     Everything after [OPTIONS] is treated as the command to run:
 
     \b
-        envfix run python -m pip install torch
-        envfix run "python -c 'import torch'"
+        envfix run python -m non_existent_module_xyz
+        envfix run python -c "import torch"
         envfix run python train.py --gpu 0
         envfix run --model qwen2.5:3b python train.py
     """
-    # ctx.args holds tokens Typer did NOT consume as its own option.
-    # Typer 0.27 bug: with allow_extra_args=True the subcommand name ("run")
-    # leaks as ctx.args[0]. Strip it so we don't execute "run python -m ..."
+    # ── Parse args (strip Typer 0.27 subcommand-name leak) ───────────────
     args = list(ctx.args)
     if args and args[0] == "run":
         args.pop(0)
-    # Re-quote any token that contains spaces so that e.g.
-    # ["python", "-c", "import torch"] → 'python -c "import torch"'
-    # instead of 'python -c import torch' (which is a syntax error).
     cmd = _quote_join(args)
 
     if not cmd.strip():
         console.print(
             "[bold red]Error:[/bold red] No command provided.\n"
             "Usage:  [bold]envfix run[/bold] [OPTIONS] COMMAND...\n"
-            "Example:[bold] envfix run python -m pip install torch[/bold]"
+            "Example:[bold] envfix run python -m non_existent_module_xyz[/bold]"
         )
         raise typer.Exit(code=1)
 
@@ -109,46 +136,60 @@ def run(
         )
     )
 
-    # ── Step 3: Ask the LLM for a diagnosis ──────────────────────────────
-    console.print(
-        f"\n[bold yellow]🤖 Asking Ollama ({model}) for a diagnosis…[/bold yellow]"
-    )
-    try:
-        result = get_diagnosis(stderr=error_text, model=model)
-    except RuntimeError as exc:
-        console.print(f"\n[bold red]Error reaching Ollama:[/bold red] {exc}")
-        raise typer.Exit(code=1)
+    # ── Step 3: Check known-fix cache before calling the model ───────────
+    cache_hit = find_cached_fix(error_text)
+    source = "ollama"
 
-    # ── Step 4: Display diagnosis + fix ──────────────────────────────────
-    if not result.parsed_ok:
+    if cache_hit:
         console.print(
-            "\n[bold yellow]⚠ Could not parse a structured response. "
-            "Showing raw model output:[/bold yellow]"
+            f"\n[bold green]⚡ Found a previously verified fix "
+            f"for a similar error ({cache_hit.score:.0%} match) — "
+            f"skipping model call.[/bold green]"
         )
-        console.print(Panel(result.raw_response, border_style="yellow", expand=False))
-        log_attempt(
-            command=cmd,
-            stderr=error_text,
-            diagnosis=result.diagnosis,
-            fix=result.fix,
-            approved=False,
-            worked=None,
+        diagnosis = cache_hit.diagnosis
+        fix = cache_hit.fix
+        source = "cache"
+        _show_fix_panel(diagnosis, fix, source, cache_hit.score)
+    else:
+        # ── Step 4a: Ask the LLM ─────────────────────────────────────────
+        console.print(
+            f"\n[bold yellow]🤖 Asking Ollama ({model}) for a diagnosis…[/bold yellow]"
         )
-        raise typer.Exit(code=1)
+        try:
+            result = get_diagnosis(stderr=error_text, model=model)
+        except RuntimeError as exc:
+            console.print(f"\n[bold red]Error reaching Ollama:[/bold red] {exc}")
+            raise typer.Exit(code=1)
 
-    console.print(
-        Panel(
-            Text.assemble(
-                ("DIAGNOSIS\n", "bold magenta"),
-                (result.diagnosis + "\n\n", "white"),
-                ("FIX\n", "bold cyan"),
-                (result.fix, "bold white"),
-            ),
-            title="[bold]envfix Suggestion[/bold]",
-            border_style="cyan",
-            expand=False,
+        if not result.parsed_ok:
+            console.print(
+                "\n[bold yellow]⚠ Could not parse a structured response. "
+                "Showing raw model output:[/bold yellow]"
+            )
+            console.print(
+                Panel(result.raw_response, border_style="yellow", expand=False)
+            )
+            log_attempt(
+                original_command=cmd,
+                error_text=error_text,
+                diagnosis=result.diagnosis,
+                fix_command=result.fix,
+                user_approved=False,
+                fix_worked=None,
+                source="ollama",
+            )
+            raise typer.Exit(code=1)
+
+        diagnosis = result.diagnosis
+        fix = result.fix
+        _show_fix_panel(diagnosis, fix, source)
+
+    # ── Step 4b: Dry-run preview ──────────────────────────────────────────
+    preview = get_fix_preview(fix)
+    if preview:
+        console.print(
+            f"\n[bold yellow]📋 What this will do:[/bold yellow] {preview}"
         )
-    )
 
     # ── Step 5: Ask for approval ──────────────────────────────────────────
     approved = Confirm.ask("\n[bold]Run this fix?[/bold]", default=False)
@@ -156,18 +197,19 @@ def run(
     if not approved:
         console.print("[dim]Exiting without changes.[/dim]")
         log_attempt(
-            command=cmd,
-            stderr=error_text,
-            diagnosis=result.diagnosis,
-            fix=result.fix,
-            approved=False,
-            worked=None,
+            original_command=cmd,
+            error_text=error_text,
+            diagnosis=diagnosis,
+            fix_command=fix,
+            user_approved=False,
+            fix_worked=None,
+            source=source,
         )
         raise typer.Exit(code=0)
 
     # ── Step 6: Run the fix, then re-run the original command ─────────────
-    console.print(f"\n[bold cyan]⚙ Applying fix:[/bold cyan] {result.fix}\n")
-    fix_stdout, fix_stderr, fix_rc = run_command(result.fix)
+    console.print(f"\n[bold cyan]⚙ Applying fix:[/bold cyan] {fix}\n")
+    fix_stdout, fix_stderr, fix_rc = run_command(fix)
 
     if fix_stdout:
         console.print(fix_stdout, end="")
@@ -180,12 +222,13 @@ def run(
             f"(exit code {fix_rc}). Aborting retry.[/bold red]"
         )
         log_attempt(
-            command=cmd,
-            stderr=error_text,
-            diagnosis=result.diagnosis,
-            fix=result.fix,
-            approved=True,
-            worked=False,
+            original_command=cmd,
+            error_text=error_text,
+            diagnosis=diagnosis,
+            fix_command=fix,
+            user_approved=True,
+            fix_worked=False,
+            source=source,
         )
         raise typer.Exit(code=1)
 
@@ -214,17 +257,95 @@ def run(
 
     # ── Step 8: Log everything ────────────────────────────────────────────
     log_attempt(
-        command=cmd,
-        stderr=error_text,
-        diagnosis=result.diagnosis,
-        fix=result.fix,
-        approved=True,
-        worked=worked,
+        original_command=cmd,
+        error_text=error_text,
+        diagnosis=diagnosis,
+        fix_command=fix,
+        user_approved=True,
+        fix_worked=worked,
+        source=source,
     )
-    console.print(
-        f"\n[dim]📝 Attempt logged to envfix_log.json[/dim]"
-    )
+    console.print(f"\n[dim]📝 Attempt logged to {LOG_FILE}[/dim]")
     raise typer.Exit(code=0 if worked else 1)
+
+
+@app.command()
+def history(
+    last: int = typer.Option(20, "--last", "-n", help="Show the last N attempts."),
+) -> None:
+    """
+    Print a readable summary of past envfix attempts from envfix_log.json.
+
+    \b
+        envfix history          # show last 20
+        envfix history --last 5 # show last 5
+    """
+    entries = get_history()
+
+    if not entries:
+        console.print(
+            "[yellow]No history found.[/yellow] "
+            f"Run [bold]envfix run[/bold] on a failing command first.\n"
+            f"(Looking for [dim]{LOG_FILE}[/dim] in the current directory)"
+        )
+        return
+
+    shown = entries[:last]
+    total = len(entries)
+
+    table = Table(
+        title=f"envfix History  (showing {len(shown)} of {total} attempts)",
+        border_style="cyan",
+        show_lines=True,
+        expand=False,
+    )
+    table.add_column("#",           style="dim",         width=3,  no_wrap=True)
+    table.add_column("When",        style="white",        width=16, no_wrap=True)
+    table.add_column("Command",     style="bold white",   width=35)
+    table.add_column("Fix",         style="cyan",         width=38)
+    table.add_column("Approved",    style="white",        width=8,  no_wrap=True)
+    table.add_column("Worked",      style="white",        width=8,  no_wrap=True)
+    table.add_column("Source",      style="dim",          width=7,  no_wrap=True)
+
+    for idx, entry in enumerate(shown, start=1):
+        # Format timestamp nicely
+        ts = entry.get("timestamp", "")
+        try:
+            dt = datetime.fromisoformat(ts)
+            when = dt.strftime("%b %d  %H:%M")
+        except (ValueError, TypeError):
+            when = ts[:16]
+
+        orig_cmd = entry.get("original_command", "—")
+        fix_cmd  = entry.get("fix_command", "—")
+
+        approved_val = entry.get("user_approved")
+        worked_val   = entry.get("fix_worked")
+
+        approved_str = "[green]y[/green]" if approved_val else "[red]n[/red]"
+
+        if worked_val is True:
+            worked_str = "[green]✓ yes[/green]"
+        elif worked_val is False:
+            worked_str = "[red]✗ no[/red]"
+        else:
+            worked_str = "[dim]—[/dim]"
+
+        source_str = entry.get("source", "ollama")
+
+        table.add_row(
+            str(idx),
+            when,
+            orig_cmd,
+            fix_cmd,
+            approved_str,
+            worked_str,
+            source_str,
+        )
+
+    console.print()
+    console.print(table)
+    console.print()
 
 
 def main() -> None:  # pragma: no cover

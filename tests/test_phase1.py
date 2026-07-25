@@ -139,16 +139,19 @@ class TestCleanFix:
 from envfix.logger import LOG_FILE, log_attempt
 
 
+
+# ── logger.py tests (Phase 2 schema) ─────────────────────────────────────────
 class TestLogAttempt:
     def test_creates_log_file(self, tmp_path, monkeypatch):
         monkeypatch.chdir(tmp_path)
         log_attempt(
-            command="pip install torch",
-            stderr="ModuleNotFoundError",
+            original_command="python -m pip install torch",
+            error_text="ModuleNotFoundError",
             diagnosis="torch not installed",
-            fix="pip install torch",
-            approved=True,
-            worked=True,
+            fix_command="python -m pip install torch",
+            user_approved=True,
+            fix_worked=True,
+            source="ollama",
         )
         log_path = tmp_path / LOG_FILE
         assert log_path.exists()
@@ -156,33 +159,39 @@ class TestLogAttempt:
     def test_log_structure(self, tmp_path, monkeypatch):
         monkeypatch.chdir(tmp_path)
         log_attempt(
-            command="cmd",
-            stderr="err",
+            original_command="cmd",
+            error_text="err",
             diagnosis="diag",
-            fix="fix_cmd",
-            approved=False,
-            worked=None,
+            fix_command="fix_cmd",
+            user_approved=False,
+            fix_worked=None,
+            source="ollama",
         )
         with open(tmp_path / LOG_FILE, encoding="utf-8") as f:
             data = json.load(f)
         assert isinstance(data, list)
         assert len(data) == 1
         record = data[0]
-        for key in ("timestamp", "command", "stderr", "diagnosis", "fix", "approved", "worked"):
+        for key in (
+            "timestamp", "original_command", "error_text",
+            "diagnosis", "fix_command", "user_approved", "fix_worked", "source",
+        ):
             assert key in record, f"Missing key: {key}"
-        assert record["approved"] is False
-        assert record["worked"] is None
+        assert record["user_approved"] is False
+        assert record["fix_worked"] is None
+        assert record["source"] == "ollama"
 
     def test_appends_multiple_records(self, tmp_path, monkeypatch):
         monkeypatch.chdir(tmp_path)
         for i in range(3):
             log_attempt(
-                command=f"cmd{i}",
-                stderr="e",
+                original_command=f"cmd{i}",
+                error_text="e",
                 diagnosis="d",
-                fix="f",
-                approved=True,
-                worked=True,
+                fix_command="f",
+                user_approved=True,
+                fix_worked=True,
+                source="ollama",
             )
         with open(tmp_path / LOG_FILE, encoding="utf-8") as f:
             data = json.load(f)
@@ -191,15 +200,30 @@ class TestLogAttempt:
     def test_survives_corrupt_log(self, tmp_path, monkeypatch):
         monkeypatch.chdir(tmp_path)
         (tmp_path / LOG_FILE).write_text("NOT JSON{{{{", encoding="utf-8")
-        # Should not raise; should overwrite with a clean list
         log_attempt(
-            command="x",
-            stderr="e",
+            original_command="x",
+            error_text="e",
             diagnosis="d",
-            fix="f",
-            approved=True,
-            worked=False,
+            fix_command="f",
+            user_approved=True,
+            fix_worked=False,
+            source="cache",
         )
         with open(tmp_path / LOG_FILE, encoding="utf-8") as f:
             data = json.load(f)
         assert len(data) == 1
+
+    def test_source_field_recorded(self, tmp_path, monkeypatch):
+        monkeypatch.chdir(tmp_path)
+        log_attempt(
+            original_command="cmd",
+            error_text="e",
+            diagnosis="d",
+            fix_command="f",
+            user_approved=True,
+            fix_worked=True,
+            source="cache",
+        )
+        with open(tmp_path / LOG_FILE, encoding="utf-8") as f:
+            data = json.load(f)
+        assert data[0]["source"] == "cache"
