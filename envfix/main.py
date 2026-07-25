@@ -11,7 +11,7 @@ from rich.prompt import Confirm
 from rich.table import Table
 from rich.text import Text
 
-from envfix.ai import get_diagnosis
+from envfix.ai import _clean_fix, get_diagnosis
 from envfix.cache import find_cached_fix
 from envfix.logger import LOG_FILE, get_history, log_attempt
 from envfix.preview import get_fix_preview
@@ -152,9 +152,11 @@ def run(
                 f"for a similar error ({cache_hit.score:.0%} match) — "
                 "skipping model call. [dim](fix didn't fully resolve it last time)[/dim]"
             )
-        console.print(f"\n[bold green]{banner}[/bold green]")
+        console.print(f"\n{banner}")
         diagnosis = cache_hit.diagnosis
-        fix = cache_hit.fix
+        # Normalise cached fix commands — old log entries may have bare 'pip install'
+        # which doesn't work on Windows. _clean_fix() converts it to 'python -m pip'.
+        fix = _clean_fix(cache_hit.fix)
         source = "cache"
         _show_fix_panel(diagnosis, fix, source, cache_hit.score)
     else:
@@ -306,7 +308,7 @@ def history(
         show_lines=True,
         expand=False,
     )
-    table.add_column("#",        width=4,   no_wrap=True)
+    table.add_column("#",    no_wrap=True)
     table.add_column("When",        style="white",        width=16, no_wrap=True)
     table.add_column("Command",     style="bold white",   width=35)
     table.add_column("Fix",         style="cyan",         width=38)
