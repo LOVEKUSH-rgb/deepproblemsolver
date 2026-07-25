@@ -18,8 +18,9 @@ class CacheHit:
 
     fix: str
     diagnosis: str
-    score: float          # 0.0 – 1.0 similarity ratio
-    original_command: str  # the command that originally triggered the error
+    score: float            # 0.0 – 1.0 similarity ratio
+    original_command: str   # the command that originally triggered the error
+    previously_worked: bool # True if fix_worked=True in the log entry
 
 
 def find_cached_fix(
@@ -28,12 +29,16 @@ def find_cached_fix(
     threshold: float = SIMILARITY_THRESHOLD,
 ) -> Optional[CacheHit]:
     """
-    Search envfix_log.json for a previously verified fix for a similar error.
+    Search envfix_log.json for a previously attempted fix for a similar error.
+
+    Two tiers:
+    - Prefers entries where the fix is CONFIRMED to have worked (fix_worked=True).
+    - Falls back to entries where the user APPROVED the fix (user_approved=True)
+      even if fix_worked=False/None — this surfaces "we've already tried this"
+      so Ollama is not called again for the same problem.
 
     Uses difflib.SequenceMatcher for lightweight fuzzy string similarity.
-    Only considers log entries where the fix is confirmed to have worked.
-    Supports both the Phase 1 schema (worked/fix/stderr) and the new
-    Phase 2 schema (fix_worked/fix_command/error_text) transparently.
+    Supports both Phase 1 (worked/fix/stderr) and Phase 2 schemas transparently.
 
     Args:
         error_text: The current stderr text to match against.
@@ -55,41 +60,57 @@ def find_cached_fix(
     if not isinstance(log_data, list) or not log_data:
         return None
 
-    best: Optional[CacheHit] = None
-    best_score = 0.0
+    # We keep two best candidates: one that worked, one that was merely approved.
+    best_worked:   Optional[tuple[float, CacheHit]] = None
+    best_approved: Optional[tuple[float, CacheHit]] = None
 
     for entry in log_data:
         # ── Support both Phase 1 and Phase 2 schemas ─────────────────────
-        # Phase 2 keys take precedence; Phase 1 keys are fallback.
-        worked = (
+        fix_worked = (
             entry.get("fix_worked")
             if "fix_worked" in entry
             else entry.get("worked")
         )
-        if not worked:
-            continue  # only cache hits that actually fixed the problem
+        user_approved = (
+            entry.get("user_approved")
+            if "user_approved" in entry
+            else entry.get("approved", False)
+        )
+
+        # Only use entries the user actually approved (ignore "n" declines)
+        if not user_approved:
+            continue
 
         stored_error: str = entry.get("error_text") or entry.get("stderr", "")
-        fix: str = entry.get("fix_command") or entry.get("fix", "")
-        diagnosis: str = entry.get("diagnosis", "")
-        original_cmd: str = (
-            entry.get("original_command") or entry.get("command", "")
-        )
+        fix: str          = entry.get("fix_command") or entry.get("fix", "")
+        diagnosis: str    = entry.get("diagnosis", "")
+        original_cmd: str = entry.get("original_command") or entry.get("command", "")
 
         if not stored_error or not fix:
             continue
 
         score = SequenceMatcher(None, error_text, stored_error).ratio()
-        if score > best_score:
-            best_score = score
-            best = CacheHit(
-                fix=fix,
-                diagnosis=diagnosis,
-                score=score,
-                original_command=original_cmd,
-            )
+        if score < threshold:
+            continue
 
-    if best and best.score >= threshold:
-        return best
+        hit = CacheHit(
+            fix=fix,
+            diagnosis=diagnosis,
+            score=score,
+            original_command=original_cmd,
+            previously_worked=bool(fix_worked),
+        )
 
+        if fix_worked:
+            if best_worked is None or score > best_worked[0]:
+                best_worked = (score, hit)
+        else:
+            if best_approved is None or score > best_approved[0]:
+                best_approved = (score, hit)
+
+    # Prefer a confirmed-working hit over a merely-approved one
+    if best_worked:
+        return best_worked[1]
+    if best_approved:
+        return best_approved[1]
     return None

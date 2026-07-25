@@ -141,11 +141,18 @@ def run(
     source = "ollama"
 
     if cache_hit:
-        console.print(
-            f"\n[bold green]⚡ Found a previously verified fix "
-            f"for a similar error ({cache_hit.score:.0%} match) — "
-            f"skipping model call.[/bold green]"
-        )
+        if cache_hit.previously_worked:
+            banner = (
+                f"⚡ Found a previously [bold green]verified[/bold green] fix "
+                f"for a similar error ({cache_hit.score:.0%} match) — skipping model call."
+            )
+        else:
+            banner = (
+                f"⚡ Found a previously [bold yellow]attempted[/bold yellow] fix "
+                f"for a similar error ({cache_hit.score:.0%} match) — "
+                "skipping model call. [dim](fix didn't fully resolve it last time)[/dim]"
+            )
+        console.print(f"\n[bold green]{banner}[/bold green]")
         diagnosis = cache_hit.diagnosis
         fix = cache_hit.fix
         source = "cache"
@@ -299,7 +306,7 @@ def history(
         show_lines=True,
         expand=False,
     )
-    table.add_column("#",           style="dim",         width=3,  no_wrap=True)
+    table.add_column("#",        width=4,   no_wrap=True)
     table.add_column("When",        style="white",        width=16, no_wrap=True)
     table.add_column("Command",     style="bold white",   width=35)
     table.add_column("Fix",         style="cyan",         width=38)

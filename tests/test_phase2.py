@@ -29,10 +29,12 @@ class TestFindCachedFix:
         assert result is None
 
     def test_returns_none_when_no_worked_entries(self, tmp_path):
+        """Entries where user_approved=False should NOT be used as cache."""
         _write_log(tmp_path, [{
             "error_text": "ModuleNotFoundError: No module named 'torch'",
             "fix_command": "python -m pip install torch",
             "fix_worked": False,
+            "user_approved": False,  # user said n — should NOT be cached
             "diagnosis": "torch not installed",
             "original_command": "python train.py",
             "source": "ollama",
@@ -41,7 +43,7 @@ class TestFindCachedFix:
             "ModuleNotFoundError: No module named 'torch'",
             log_file=str(tmp_path / LOG_FILE),
         )
-        assert result is None  # fix_worked is False
+        assert result is None  # user_approved=False → not cached
 
     def test_exact_match_returns_cache_hit(self, tmp_path):
         error = "ModuleNotFoundError: No module named 'torch'"
@@ -49,6 +51,7 @@ class TestFindCachedFix:
             "error_text": error,
             "fix_command": "python -m pip install torch",
             "fix_worked": True,
+            "user_approved": True,
             "diagnosis": "torch not installed",
             "original_command": "python train.py",
             "source": "ollama",
@@ -58,6 +61,7 @@ class TestFindCachedFix:
         assert isinstance(result, CacheHit)
         assert result.fix == "python -m pip install torch"
         assert result.score == pytest.approx(1.0)
+        assert result.previously_worked is True
 
     def test_similar_error_returns_hit(self, tmp_path):
         """Nearly identical error (same structure, same module) should match."""
@@ -67,14 +71,31 @@ class TestFindCachedFix:
             "error_text": stored,
             "fix_command": "python -m pip install non_existent_module_xyz",
             "fix_worked": True,
+            "user_approved": True,
             "diagnosis": "module missing",
             "original_command": "python -m non_existent_module_xyz",
             "source": "ollama",
         }])
         result = find_cached_fix(current, log_file=str(tmp_path / LOG_FILE))
-        # The error is very similar — should be above threshold
         assert result is not None
         assert result.score >= SIMILARITY_THRESHOLD
+
+    def test_approved_but_failed_fix_also_cached(self, tmp_path):
+        """user_approved=True but fix_worked=False should still produce a cache hit."""
+        error = "No module named non_existent_module_xyz"
+        _write_log(tmp_path, [{
+            "error_text": error,
+            "fix_command": "python -m pip install non_existent_module_xyz",
+            "fix_worked": False,
+            "user_approved": True,
+            "diagnosis": "module not found",
+            "original_command": "python -m non_existent_module_xyz",
+            "source": "ollama",
+        }])
+        result = find_cached_fix(error, log_file=str(tmp_path / LOG_FILE))
+        assert result is not None
+        assert result.previously_worked is False  # honest about outcome
+        assert result.fix == "python -m pip install non_existent_module_xyz"
 
     def test_unrelated_error_returns_none(self, tmp_path):
         """A completely different error should not produce a cache hit."""
@@ -101,21 +122,23 @@ class TestFindCachedFix:
             "stderr": error,
             "diagnosis": "numpy missing",
             "fix": "python -m pip install numpy",
-            "approved": True,
-            "worked": True,  # Phase 1 key
+            "approved": True,   # Phase 1 key
+            "worked": True,     # Phase 1 key
         }])
         result = find_cached_fix(error, log_file=str(tmp_path / LOG_FILE))
         assert result is not None
         assert result.fix == "python -m pip install numpy"
+        assert result.previously_worked is True
 
     def test_returns_best_match_among_multiple(self, tmp_path):
-        """When multiple entries match, the highest-score one wins."""
+        """When multiple entries match, worked takes priority; then highest score."""
         target = "ModuleNotFoundError: No module named 'torch'"
         _write_log(tmp_path, [
             {
                 "error_text": "ModuleNotFoundError: No module named 'torch'",
                 "fix_command": "python -m pip install torch",
                 "fix_worked": True,
+                "user_approved": True,
                 "diagnosis": "torch missing",
                 "original_command": "python a.py",
                 "source": "ollama",
@@ -124,6 +147,7 @@ class TestFindCachedFix:
                 "error_text": "SyntaxError: invalid syntax",
                 "fix_command": "python -m pip install --upgrade python",
                 "fix_worked": True,
+                "user_approved": True,
                 "diagnosis": "old python",
                 "original_command": "python b.py",
                 "source": "ollama",
@@ -132,6 +156,7 @@ class TestFindCachedFix:
         result = find_cached_fix(target, log_file=str(tmp_path / LOG_FILE))
         assert result is not None
         assert result.fix == "python -m pip install torch"  # higher score
+        assert result.previously_worked is True
 
 
 # ── preview.py tests ──────────────────────────────────────────────────────────
@@ -268,25 +293,52 @@ class TestCacheIntegration:
     def test_same_error_twice_uses_cache(self, tmp_path):
         """
         Simulate the key Phase 2 scenario:
-        1. Log a verified fix for error X.
+        1. Log a verified (worked) fix for error X.
         2. find_cached_fix(error X) must return that fix immediately.
         """
         error = "ModuleNotFoundError: No module named 'non_existent_module_xyz'"
         fix   = "python -m pip install non_existent_module_xyz"
         log_file = str(tmp_path / LOG_FILE)
 
-        # First run: save a worked entry
         _write_log(tmp_path, [{
             "error_text":       error,
             "fix_command":      fix,
             "fix_worked":       True,
+            "user_approved":    True,
             "diagnosis":        "Module not installed.",
             "original_command": "python -m non_existent_module_xyz",
             "source":           "ollama",
         }])
 
-        # Second run: cache should surface it without calling the model
         hit = find_cached_fix(error, log_file=log_file)
-        assert hit is not None, "Cache should have returned a hit for the identical error"
+        assert hit is not None, "Cache should return a hit for the identical error"
         assert hit.fix == fix
         assert hit.score == pytest.approx(1.0)
+        assert hit.previously_worked is True
+
+    def test_approved_failed_fix_also_triggers_cache(self, tmp_path):
+        """
+        Even if the fix didn't install successfully (e.g. package not on PyPI),
+        the second run should still hit the cache — skipping Ollama entirely.
+        """
+        error = "ModuleNotFoundError: No module named 'non_existent_module_xyz'"
+        fix   = "python -m pip install non_existent_module_xyz"
+        log_file = str(tmp_path / LOG_FILE)
+
+        _write_log(tmp_path, [{
+            "error_text":       error,
+            "fix_command":      fix,
+            "fix_worked":       False,   # pip couldn't find the package
+            "user_approved":    True,    # but user did approve and run it
+            "diagnosis":        "Module not installed.",
+            "original_command": "python -m non_existent_module_xyz",
+            "source":           "ollama",
+        }])
+
+        hit = find_cached_fix(error, log_file=log_file)
+        assert hit is not None, (
+            "Cache should still hit for an approved-but-failed fix "
+            "so Ollama is not called again for the same problem"
+        )
+        assert hit.previously_worked is False  # honest: it didn't work last time
+        assert hit.fix == fix
