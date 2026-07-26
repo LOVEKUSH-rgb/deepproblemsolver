@@ -7,6 +7,8 @@ import re
 from datetime import datetime, timezone
 from typing import Any, Optional
 
+from envfix.embeddings import get_embedding
+
 
 def get_log_file() -> str:
     """
@@ -85,6 +87,11 @@ def log_attempt(
         "context_included": context_included,
         "provider":         provider,
     }
+    
+    # Optionally compute and store a semantic embedding of the error text
+    embedding = get_embedding(error_text)
+    if embedding:
+        record["embedding"] = embedding
 
     log_data = _load_log(get_log_file())
     log_data.append(record)

@@ -7,6 +7,7 @@ from difflib import SequenceMatcher
 from typing import Optional
 
 from envfix.logger import get_log_file
+from envfix.embeddings import get_embedding, cosine_similarity
 
 # Minimum similarity ratio (0–1) to consider a log entry a match.
 # 0.92 is deliberately conservative: we only surface cache hits when
@@ -14,6 +15,10 @@ from envfix.logger import get_log_file
 # Too low and structurally-similar errors (e.g. two different ModuleNotFoundErrors)
 # get matched to each other even when the missing package differs.
 SIMILARITY_THRESHOLD = 0.92
+
+# Threshold for semantic cosine similarity if sentence-transformers is installed.
+# 0.80 is empirically chosen to match identical errors with different variable names.
+SEMANTIC_THRESHOLD = 0.80
 
 
 @dataclass
@@ -76,6 +81,8 @@ def find_cached_fix(
     # We keep two best candidates: one that worked, one that was merely approved.
     best_worked:   Optional[tuple[float, CacheHit]] = None
     best_approved: Optional[tuple[float, CacheHit]] = None
+    
+    current_embedding = get_embedding(error_text)
 
     for entry in log_data:
         # ── Support both Phase 1 and Phase 2 schemas ─────────────────────
@@ -105,9 +112,19 @@ def find_cached_fix(
 
         if not stored_error or not fix:
             continue
+            
+        stored_embedding = entry.get("embedding")
+        is_semantic = False
+        
+        if current_embedding and stored_embedding:
+            score = cosine_similarity(current_embedding, stored_embedding)
+            is_semantic = True
+            hit_threshold = SEMANTIC_THRESHOLD
+        else:
+            score = SequenceMatcher(None, error_text, stored_error).ratio()
+            hit_threshold = SIMILARITY_THRESHOLD
 
-        score = SequenceMatcher(None, error_text, stored_error).ratio()
-        if score < threshold:
+        if score < hit_threshold:
             continue
 
         hit = CacheHit(
