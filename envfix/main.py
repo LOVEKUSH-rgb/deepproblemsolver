@@ -643,9 +643,63 @@ def history(
             source_str,
         )
 
-    console.print()
     console.print(table)
     console.print()
+
+
+@app.command("stats")
+def stats_cmd() -> None:
+    """
+    Print an aggregated summary of envfix usage statistics.
+    """
+    entries = get_history()
+    
+    if not entries:
+        console.print("[yellow]No history found. Run [bold]envfix run[/bold] on a failing command first.[/yellow]")
+        return
+        
+    total_diagnosed = len(entries)
+    
+    applied_fixes = [e for e in entries if e.get("fix_worked") is not None]
+    if applied_fixes:
+        successes = sum(1 for e in applied_fixes if e.get("fix_worked") is True)
+        success_rate = (successes / len(applied_fixes)) * 100
+    else:
+        success_rate = 0.0
+        
+    # Calculate most used provider
+    from collections import Counter
+    providers = [e.get("provider", "ollama") for e in entries]
+    most_used_provider = Counter(providers).most_common(1)[0][0] if providers else "None"
+    
+    # Calculate git stash creations from git reflog
+    stash_count = 0
+    try:
+        import subprocess
+        out = subprocess.check_output(
+            ["git", "--no-pager", "reflog", "show", "refs/stash"], 
+            stderr=subprocess.DEVNULL, 
+            text=True,
+            encoding="utf-8",
+            errors="replace"
+        )
+        for line in out.splitlines():
+            if "envfix-auto-backup" in line:
+                stash_count += 1
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        # Either not in a git repo, no stash reflog exists, or git not installed
+        pass
+        
+    table = Table(title="envfix Statistics", border_style="cyan")
+    table.add_column("Metric", style="bold white")
+    table.add_column("Value", style="bold cyan")
+    
+    table.add_row("Total Errors Diagnosed", str(total_diagnosed))
+    table.add_row("Success Rate", f"{success_rate:.1f}%")
+    table.add_row("Most-Used Provider", most_used_provider)
+    table.add_row("Safety Backups Created", str(stash_count))
+    
+    console.print(table)
 
 
 def main() -> None:  # pragma: no cover
