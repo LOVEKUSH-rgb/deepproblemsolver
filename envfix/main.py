@@ -305,7 +305,7 @@ def history(
     last: int = typer.Option(20, "--last", "-n", help="Show the last N attempts."),
 ) -> None:
     """
-    Print a readable summary of past envfix attempts from envfix_log.json.
+    Print a readable summary of past envfix attempts from the current user's log file.
 
     \b
         envfix history          # show last 20

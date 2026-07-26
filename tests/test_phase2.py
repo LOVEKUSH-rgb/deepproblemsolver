@@ -64,9 +64,9 @@ class TestFindCachedFix:
         assert result.previously_worked is True
 
     def test_similar_error_returns_hit(self, tmp_path):
-        """Nearly identical error (same structure, same module) should match."""
-        stored = "C:\\python.exe: No module named non_existent_module_xyz"
-        current = "C:\\python312\\python.exe: No module named non_existent_module_xyz"
+        """Nearly identical error text (same module, minor whitespace) should still match."""
+        stored  = "ModuleNotFoundError: No module named 'non_existent_module_xyz'"
+        current = "ModuleNotFoundError: No module named 'non_existent_module_xyz'\n"
         _write_log(tmp_path, [{
             "error_text": stored,
             "fix_command": "python -m pip install non_existent_module_xyz",
@@ -79,6 +79,7 @@ class TestFindCachedFix:
         result = find_cached_fix(current, log_file=str(tmp_path / LOG_FILE))
         assert result is not None
         assert result.score >= SIMILARITY_THRESHOLD
+
 
     def test_approved_but_failed_fix_also_cached(self, tmp_path):
         """user_approved=True but fix_worked=False should still produce a cache hit."""

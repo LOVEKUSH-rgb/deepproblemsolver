@@ -9,9 +9,11 @@ from typing import Optional
 from envfix.logger import get_log_file
 
 # Minimum similarity ratio (0–1) to consider a log entry a match.
-# 0.85 is deliberately conservative: we only surface cache hits when
-# the error looks nearly identical to a past one.
-SIMILARITY_THRESHOLD = 0.85
+# 0.92 is deliberately conservative: we only surface cache hits when
+# the error text is nearly identical (same module name, same error type).
+# Too low and structurally-similar errors (e.g. two different ModuleNotFoundErrors)
+# get matched to each other even when the missing package differs.
+SIMILARITY_THRESHOLD = 0.92
 
 
 @dataclass
