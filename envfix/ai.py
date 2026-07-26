@@ -1,13 +1,28 @@
-"""ai.py — Calls the local Ollama model and parses its response."""
+"""ai.py — Calls local or cloud AI models and parses their responses."""
 
+import os
 import re
 from dataclasses import dataclass
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
+
+if TYPE_CHECKING:
+    from envfix.context import CodeContext
+
 
 try:
     import ollama
 except ImportError:  # pragma: no cover
     ollama = None  # type: ignore[assignment]
+
+try:
+    import groq
+except ImportError:
+    groq = None
+
+try:
+    from google import genai
+except ImportError:
+    genai = None
 
 
 PROMPT_TEMPLATE = (
@@ -29,7 +44,43 @@ PROMPT_TEMPLATE = (
     "FIX: python -m pip install torch"
 )
 
+# Used when a code snippet from the failing file is available.
+# Gives the model much richer context than the raw error text alone.
+PROMPT_TEMPLATE_WITH_CONTEXT = (
+    "You are diagnosing a development environment error on a Windows machine. "
+    "The user has specified this error is related to the '{category}' ecosystem.\n\n"
+    "Here is the error output:\n{stderr}\n\n"
+    "Here is the relevant code from {filepath}, lines {start}-{end}:\n"
+    "```\n{snippet}\n```\n\n"
+    "Using both the error and the code above, give a precise diagnosis (1-2 sentences) "
+    "that references the actual code where possible, "
+    "then give exactly ONE shell command that would likely fix it. "
+    "Respond in this exact format:\n"
+    "DIAGNOSIS: <text>\n"
+    "FIX: <command>\n\n"
+    "IMPORTANT rules for the FIX command:\n"
+    "- If it's a Python pip error, use 'python -m pip install ...' instead of 'pip install ...'\n"
+    "- NO backticks, NO markdown formatting, NO surrounding quotes around the command\n"
+    "- Give a single runnable shell command only\n"
+    "Example correct format:\n"
+    "DIAGNOSIS: Line 42 calls `train()` before the model is loaded.\n"
+    "FIX: python -m pip install torch"
+)
+
 DEFAULT_MODEL = "llama3.1:8b"
+
+
+def get_actual_model(model: str, provider: str) -> str:
+    """Resolve the actual model string if the user left it as the Ollama default."""
+    if model != DEFAULT_MODEL:
+        return model
+    
+    if provider == "groq":
+        return "llama-3.3-70b-versatile"
+    elif provider == "gemini":
+        return "gemini-3.5-flash"
+    
+    return DEFAULT_MODEL
 
 
 @dataclass
@@ -43,49 +94,98 @@ class DiagnosisResult:
 
 
 def get_diagnosis(
-    stderr: str, 
-    model: str = DEFAULT_MODEL, 
+    stderr: str,
+    model: str = DEFAULT_MODEL,
     category: str = "general",
+    code_context: "Optional[CodeContext]" = None,
+    provider: str = "ollama",
 ) -> DiagnosisResult:
     """
-    Send stderr to the local Ollama model and parse the structured response.
-
-    If the model doesn't follow the DIAGNOSIS/FIX format exactly, the raw
-    response is returned in both fields so the caller can still display it
-    without crashing.
+    Send stderr (and optional code context) to the chosen AI provider.
 
     Args:
-        stderr:   The captured error text from the failed command.
-        model:    Ollama model tag to use (default: llama3.1:8b).
-        category: The ecosystem category (e.g. 'node', 'python', 'general').
+        stderr:       The captured error text from the failed command.
+        model:        Model tag to use (default: llama3.1:8b for ollama).
+        category:     The ecosystem category.
+        code_context: Optional in-project code snippet extracted from the traceback.
+        provider:     Which AI service to use ("ollama", "groq", or "gemini").
 
     Returns:
         A DiagnosisResult with diagnosis, fix, raw_response, and parsed_ok.
-
-    Raises:
-        RuntimeError: If the `ollama` package is not installed or the
-                      Ollama service is unreachable.
     """
-    if ollama is None:
-        raise RuntimeError(
-            "The 'ollama' Python package is not installed. "
-            "Run: pip install ollama"
+    if code_context is not None:
+        prompt = PROMPT_TEMPLATE_WITH_CONTEXT.format(
+            stderr=stderr,
+            category=category,
+            filepath=code_context.filepath,
+            start=code_context.start_line,
+            end=code_context.end_line,
+            snippet=code_context.snippet,
         )
+    else:
+        prompt = PROMPT_TEMPLATE.format(stderr=stderr, category=category)
 
-    prompt = PROMPT_TEMPLATE.format(stderr=stderr, category=category)
+    if provider == "ollama":
+        if ollama is None:
+            raise RuntimeError(
+                "The 'ollama' Python package is not installed. "
+                "Run: pip install ollama"
+            )
+        try:
+            response = ollama.chat(
+                model=model,
+                messages=[{"role": "user", "content": prompt}],
+            )
+            raw = response["message"]["content"].strip()
+        except Exception as exc:
+            raise RuntimeError(
+                f"Ollama request failed: {exc}\n"
+                "Make sure the Ollama service is running (`ollama serve`) "
+                f"and the model '{model}' is pulled (`ollama pull {model}`)."
+            ) from exc
 
-    try:
-        response = ollama.chat(
-            model=model,
-            messages=[{"role": "user", "content": prompt}],
-        )
-        raw: str = response["message"]["content"].strip()
-    except Exception as exc:
-        raise RuntimeError(
-            f"Ollama request failed: {exc}\n"
-            "Make sure the Ollama service is running (`ollama serve`) "
-            f"and the model '{model}' is pulled (`ollama pull {model}`)."
-        ) from exc
+    elif provider == "groq":
+        if groq is None:
+            raise RuntimeError("The 'groq' Python package is not installed.")
+        api_key = os.getenv("GROQ_API_KEY")
+        if not api_key:
+            raise RuntimeError(
+                "GROQ_API_KEY environment variable is not set. "
+                "Please set it to your Groq API key."
+            )
+        try:
+            client = groq.Groq(api_key=api_key)
+            actual_model = get_actual_model(model, provider)
+            chat_completion = client.chat.completions.create(
+                messages=[{"role": "user", "content": prompt}],
+                model=actual_model,
+            )
+            raw = chat_completion.choices[0].message.content.strip()
+        except Exception as exc:
+            raise RuntimeError(f"Groq request failed: {exc}") from exc
+
+    elif provider == "gemini":
+        if genai is None:
+            raise RuntimeError("The 'google-genai' Python package is not installed.")
+        api_key = os.getenv("GEMINI_API_KEY")
+        if not api_key:
+            raise RuntimeError(
+                "GEMINI_API_KEY environment variable is not set. "
+                "Please set it to your Gemini API key."
+            )
+        try:
+            client = genai.Client(api_key=api_key)
+            actual_model = get_actual_model(model, provider)
+            response = client.models.generate_content(
+                model=actual_model, 
+                contents=prompt
+            )
+            raw = response.text.strip()
+        except Exception as exc:
+            raise RuntimeError(f"Gemini API call failed: {exc}") from exc
+
+    else:
+        raise ValueError(f"Unknown provider: {provider}")
 
     return _parse_response(raw)
 

@@ -4,17 +4,17 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "envfix"
-version = "0.3.0"
+version = "0.4.0"
 description = "CLI tool that diagnoses and auto-fixes Python/ML environment errors using a local LLM."
 readme = "README.md"
 requires-python = ">=3.10"
-license = { text = "MIT" }
+license = { file = "LICENSE" }
 keywords = ["cli", "llm", "ollama", "python", "environment", "debugging"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Environment :: Console",
     "Intended Audience :: Developers",
-    "License :: OSI Approved :: MIT License",
+    "License :: Other/Proprietary License",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
@@ -24,6 +24,10 @@ classifiers = [
 dependencies = [
     "typer[all]>=0.12",   # CLI framework + Rich for pretty terminal output
     "ollama>=0.2",        # Python client for the local Ollama service
+    "groq>=0.9.0",        # Python client for Groq cloud API
+    "google-genai>=0.1.0", # Python client for Gemini API
+    "tomli>=2.0.1; python_version < '3.11'",
+    "tomli-w>=1.0.0",
 ]
 
 [project.urls]

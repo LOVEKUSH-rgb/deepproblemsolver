@@ -35,3 +35,8 @@ envfix_log.json
 .DS_Store
 Thumbs.db
 desktop.ini
+envfix_log_*.json
+*.pyc
+__pycache__/
+train.py
+demo_error.py

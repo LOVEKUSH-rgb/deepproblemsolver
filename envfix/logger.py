@@ -38,6 +38,8 @@ def log_attempt(
     fix_worked: Optional[bool],
     source: str = "ollama",
     category: str = "general",
+    context_included: bool = False,
+    provider: str = "ollama",
 ) -> None:
     """
     Append one attempt record to the user's personal log file.
@@ -53,7 +55,9 @@ def log_attempt(
       "user_approved":    whether the user said y to apply it,
       "fix_worked":       True/False after retry, None if not approved,
       "source":           "ollama" | "cache",
-      "category":         ecosystem category (e.g. "python", "node", "general")
+      "category":         ecosystem category (e.g. "python", "node", "general"),
+      "context_included": whether a code snippet was injected into the prompt,
+      "provider":         the AI provider used (e.g., "ollama", "groq", "gemini")
     }
 
     Args:
@@ -65,6 +69,8 @@ def log_attempt(
         fix_worked:       True/False after re-run, None if not applied.
         source:           Where the fix came from: "ollama" or "cache".
         category:         The ecosystem category.
+        context_included: Whether a code snippet was included in the prompt.
+        provider:         The AI provider used.
     """
     record: dict[str, Any] = {
         "timestamp":        datetime.now(timezone.utc).isoformat(),
@@ -76,6 +82,8 @@ def log_attempt(
         "fix_worked":       fix_worked,
         "source":           source,
         "category":         category,
+        "context_included": context_included,
+        "provider":         provider,
     }
 
     log_data = _load_log(get_log_file())
@@ -134,4 +142,6 @@ def _normalise_entry(entry: dict[str, Any]) -> dict[str, Any]:
         "fix_worked":       entry.get("fix_worked") if "fix_worked" in entry else entry.get("worked"),
         "source":           entry.get("source", "ollama"),
         "category":         entry.get("category", "general"),
+        "context_included": bool(entry.get("context_included", False)),
+        "provider":         entry.get("provider", "ollama"),
     }

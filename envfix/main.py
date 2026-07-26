@@ -11,8 +11,10 @@ from rich.prompt import Confirm, Prompt
 from rich.table import Table
 from rich.text import Text
 
-from envfix.ai import _clean_fix, get_diagnosis
+from envfix.ai import _clean_fix, get_actual_model, get_diagnosis
 from envfix.cache import find_cached_fix
+from envfix.config import load_config, save_config, reset_config
+from envfix.context import extract_context
 from envfix.logger import LOG_FILE, get_history, get_log_file, log_attempt
 from envfix.preview import get_fix_preview, is_destructive
 from envfix.runner import run_command
@@ -22,6 +24,7 @@ app = typer.Typer(
     help="Diagnose and auto-fix Python/ML environment errors using a local LLM.",
     add_completion=False,
 )
+
 console = Console()
 
 
@@ -79,6 +82,55 @@ def _show_fix_panel(
 
 # ── Commands ──────────────────────────────────────────────────────────────────
 
+@app.command("config")
+def config_cmd(
+    show: bool = typer.Option(False, "--show", help="Show current configuration."),
+    reset: bool = typer.Option(False, "--reset", help="Reset configuration to defaults."),
+) -> None:
+    """Manage envfix global configuration interactively."""
+    if reset:
+        reset_config()
+        console.print("[green]Configuration reset to defaults.[/green]")
+        return
+        
+    if show:
+        config = load_config()
+        if not config:
+            console.print("[yellow]No configuration found. Using hardcoded defaults.[/yellow]")
+            return
+            
+        table = Table(title="Global Configuration")
+        table.add_column("Key", style="cyan")
+        table.add_column("Value", style="magenta")
+        
+        for k, v in config.items():
+            table.add_row(k, str(v))
+            
+        console.print(table)
+        return
+
+    console.print("[bold cyan]envfix Configuration Setup[/bold cyan]\n")
+    
+    while True:
+        provider = typer.prompt("Default provider [ollama/groq/gemini]", default="ollama")
+        if provider in ["ollama", "groq", "gemini"]:
+            break
+        console.print("[red]Invalid choice. Must be ollama, groq, or gemini.[/red]")
+        
+    while True:
+        category = typer.prompt("Default category [general/python/node/docker]", default="general")
+        if category in ["general", "python", "node", "docker"]:
+            break
+        console.print("[red]Invalid choice. Must be general, python, node, or docker.[/red]")
+    
+    save_config({
+        "default_provider": provider,
+        "default_category": category,
+    })
+    
+    console.print("\n[bold green]Configuration saved successfully![/bold green]")
+
+
 @app.command(
     context_settings={"ignore_unknown_options": True, "allow_extra_args": True},
 )
@@ -90,11 +142,20 @@ def run(
         help="Ollama model tag to use for diagnosis.",
         show_default=True,
     ),
-    category: str = typer.Option(
-        "general",
+    category: Optional[str] = typer.Option(
+        None,
         "--category",
-        help="Ecosystem category (e.g. python, node, docker) to tailor the diagnosis.",
-        show_default=True,
+        help="Ecosystem category (e.g. python, node, docker) to tailor the diagnosis. [default: general (or config)]",
+    ),
+    provider: Optional[str] = typer.Option(
+        None,
+        "--provider",
+        help="AI provider to use (ollama, groq, gemini). [default: ollama (or config)]",
+    ),
+    no_cache: bool = typer.Option(
+        False,
+        "--no-cache",
+        help="Bypass the local cache and force a new AI diagnosis.",
     ),
 ) -> None:
     """
@@ -122,6 +183,13 @@ def run(
             "Example:[bold] envfix run python -m non_existent_module_xyz[/bold]"
         )
         raise typer.Exit(code=1)
+        
+    # Resolve defaults from config if omitted
+    config = load_config()
+    if not provider:
+        provider = config.get("default_provider", "ollama")
+    if not category:
+        category = config.get("default_category", "general")
 
     # ── Step 1: Run the original command ─────────────────────────────────
     console.print(f"\n[bold cyan]▶ Running:[/bold cyan] {cmd}\n")
@@ -145,9 +213,21 @@ def run(
         )
     )
 
-    # ── Step 3: Check known-fix cache before calling the model ───────────
-    cache_hit = find_cached_fix(error_text, category=category)
-    source = "ollama"
+    # ── Step 3: Extract code context from the stack trace ─────────────────
+    code_context = extract_context(error_text)
+    if code_context:
+        console.print(
+            f"[dim]📎 Context found: {code_context.filepath} "
+            f"(lines {code_context.start_line}–{code_context.end_line})[/dim]"
+        )
+
+    # ── Step 4: Check known-fix cache before calling the model ───────────
+    if not no_cache:
+        cache_hit = find_cached_fix(error_text, category=category)
+    else:
+        cache_hit = None
+    
+    source = provider
 
     if cache_hit:
         if cache_hit.previously_worked:
@@ -170,13 +250,21 @@ def run(
         _show_fix_panel(diagnosis, fix, source, cache_hit.score)
     else:
         # ── Step 4a: Ask the LLM ─────────────────────────────────────────
+        provider_name = provider.capitalize()
+        display_model = get_actual_model(model, provider)
         console.print(
-            f"\n[bold yellow]🤖 Asking Ollama ({model}) for a diagnosis…[/bold yellow]"
+            f"\n[bold yellow]🤖 Asking {provider_name} ({display_model}) for a diagnosis…[/bold yellow]"
         )
         try:
-            result = get_diagnosis(stderr=error_text, model=model, category=category)
+            result = get_diagnosis(
+                stderr=error_text,
+                model=model,
+                category=category,
+                code_context=code_context,
+                provider=provider,
+            )
         except RuntimeError as exc:
-            console.print(f"\n[bold red]Error reaching Ollama:[/bold red] {exc}")
+            console.print(f"\n[bold red]Error reaching {provider_name}:[/bold red] {exc}")
             raise typer.Exit(code=1)
 
         if not result.parsed_ok:
@@ -194,8 +282,10 @@ def run(
                 fix_command=result.fix,
                 user_approved=False,
                 fix_worked=None,
-                source="ollama",
+                source=provider,
                 category=category,
+                context_included=code_context is not None,
+                provider=provider,
             )
             raise typer.Exit(code=1)
 
@@ -232,6 +322,8 @@ def run(
             fix_worked=None,
             source=source,
             category=category,
+            context_included=code_context is not None,
+            provider=provider,
         )
         raise typer.Exit(code=0)
 
@@ -258,6 +350,8 @@ def run(
             fix_worked=False,
             source=source,
             category=category,
+            context_included=code_context is not None,
+            provider=provider,
         )
         raise typer.Exit(code=1)
 
@@ -294,6 +388,8 @@ def run(
         fix_worked=worked,
         source=source,
         category=category,
+        context_included=code_context is not None,
+        provider=provider,
     )
     console.print(f"\n[dim]📝 Attempt logged to {get_log_file()}[/dim]")
     raise typer.Exit(code=0 if worked else 1)

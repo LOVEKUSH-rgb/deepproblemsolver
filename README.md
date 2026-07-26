@@ -35,15 +35,19 @@ $ python -m pip install torch           │ python -m pip install torch         
 | Requirement | Version | Why |
 |---|---|---|
 | Python | ≥ 3.10 | f-strings, match syntax |
-| [Ollama](https://ollama.com/download) | latest | runs the local AI model |
-| RAM | ≥ 8 GB | for `llama3.1:8b` — or ≥ 4 GB for `qwen2.5:3b` |
+| [Ollama](https://ollama.com/download) | latest | (Optional) runs the local AI model |
+| API Keys | | (Optional) `GROQ_API_KEY` or `GEMINI_API_KEY` for cloud models |
+| RAM | ≥ 8 GB | for local `llama3.1:8b` — or ≥ 4 GB for `qwen2.5:3b` |
 
 ---
 
 ## Install
 
-### Step 1 — Install Ollama
+### Step 1 — Choose your AI provider
 
+`envfix` supports local and cloud models. 
+
+**Option A (Default): Local Ollama**
 Download from **[ollama.com/download](https://ollama.com/download)** (Windows, macOS, Linux).
 
 On Linux you can also run:
@@ -62,6 +66,26 @@ ollama pull qwen2.5:3b
 ollama pull llama3.2:3b
 ```
 
+**Option B: Groq API (Cloud)**
+1. Get a free API key from [console.groq.com](https://console.groq.com/).
+2. Set it in your terminal:
+   ```bash
+   # Windows PowerShell
+   $env:GROQ_API_KEY="your-key-here"
+   # Linux/macOS
+   export GROQ_API_KEY="your-key-here"
+   ```
+
+**Option C: Gemini API (Cloud)**
+1. Get a free API key from [Google AI Studio](https://aistudio.google.com/).
+2. Set it in your terminal:
+   ```bash
+   # Windows PowerShell
+   $env:GEMINI_API_KEY="your-key-here"
+   # Linux/macOS
+   export GEMINI_API_KEY="your-key-here"
+   ```
+
 ### Step 3 — Start Ollama
 
 ```bash
@@ -70,6 +94,7 @@ ollama serve
 
 > **Windows tip:** The Ollama installer adds a system-tray icon that starts the
 > service automatically on login — you may be able to skip this step.
+> *(Skip this step if you are using Groq or Gemini).*
 
 ### Step 4 — Install envfix
 
@@ -113,6 +138,10 @@ envfix run python train.py --gpu 0
 
 # Use a lighter model on a low-RAM machine
 envfix run python train.py --model qwen2.5:3b
+
+# Use a cloud provider instead of local Ollama
+envfix run npm install --provider groq
+envfix run npm install --provider gemini
 
 # Check your fix history
 envfix history
@@ -167,7 +196,8 @@ Type 'yes' to run this fix (no):
 | Command | What it does |
 |---|---|
 | `envfix run <cmd>` | Run a command; diagnose + suggest fix on failure |
-| `envfix run <cmd> --model <tag>` | Use a specific Ollama model |
+| `envfix run <cmd> --provider <name>` | Select AI provider (`ollama` [default], `groq`, `gemini`) |
+| `envfix run <cmd> --model <tag>` | Use a specific model tag/name for the chosen provider |
 | `envfix run <cmd> --category <eco>` | Hint the ecosystem (`python`, `node`, `docker` …) |
 | `envfix history` | Show the last 20 attempts |
 | `envfix history --last N` | Show last N attempts |
@@ -230,7 +260,9 @@ Sample entry:
   "user_approved": true,
   "fix_worked": true,
   "source": "ollama",
-  "category": "python"
+  "category": "python",
+  "context_included": false,
+  "provider": "ollama"
 }
 ```
 
@@ -293,4 +325,6 @@ how to submit a fix.
 
 ## License
 
-[MIT](LICENSE)
+This project is licensed under the Business Source License 1.1 (BSL 1.1). 
+It requires a commercial license for enterprise/managed service use. 
+See the [LICENSE](LICENSE) file for complete details.
