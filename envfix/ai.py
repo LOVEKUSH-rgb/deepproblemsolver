@@ -11,7 +11,9 @@ except ImportError:  # pragma: no cover
 
 
 PROMPT_TEMPLATE = (
-    "You are diagnosing a Python/ML environment error on a Windows machine. "
+    "You are diagnosing a development environment error on a Windows machine. "
+    "The user has specified this error is related to the '{category}' ecosystem "
+    "(it could be Python, Node.js, package managers, build tools, permissions, or general shell errors).\n"
     "Here is the error output:\n{stderr}\n\n"
     "Give a short diagnosis (1-2 sentences) of the root cause, "
     "then give exactly ONE shell command that would likely fix it. "
@@ -19,7 +21,7 @@ PROMPT_TEMPLATE = (
     "DIAGNOSIS: <text>\n"
     "FIX: <command>\n\n"
     "IMPORTANT rules for the FIX command:\n"
-    "- Use 'python -m pip install ...' instead of 'pip install ...' (pip may not be on PATH on Windows)\n"
+    "- If it's a Python pip error, use 'python -m pip install ...' instead of 'pip install ...'\n"
     "- NO backticks, NO markdown formatting, NO surrounding quotes around the command\n"
     "- Give a single runnable shell command only\n"
     "Example correct format:\n"
@@ -40,7 +42,11 @@ class DiagnosisResult:
     parsed_ok: bool
 
 
-def get_diagnosis(stderr: str, model: str = DEFAULT_MODEL) -> DiagnosisResult:
+def get_diagnosis(
+    stderr: str, 
+    model: str = DEFAULT_MODEL, 
+    category: str = "general",
+) -> DiagnosisResult:
     """
     Send stderr to the local Ollama model and parse the structured response.
 
@@ -49,8 +55,9 @@ def get_diagnosis(stderr: str, model: str = DEFAULT_MODEL) -> DiagnosisResult:
     without crashing.
 
     Args:
-        stderr: The captured error text from the failed command.
-        model:  Ollama model tag to use (default: llama3.1:8b).
+        stderr:   The captured error text from the failed command.
+        model:    Ollama model tag to use (default: llama3.1:8b).
+        category: The ecosystem category (e.g. 'node', 'python', 'general').
 
     Returns:
         A DiagnosisResult with diagnosis, fix, raw_response, and parsed_ok.
@@ -65,7 +72,7 @@ def get_diagnosis(stderr: str, model: str = DEFAULT_MODEL) -> DiagnosisResult:
             "Run: pip install ollama"
         )
 
-    prompt = PROMPT_TEMPLATE.format(stderr=stderr)
+    prompt = PROMPT_TEMPLATE.format(stderr=stderr, category=category)
 
     try:
         response = ollama.chat(

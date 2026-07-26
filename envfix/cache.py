@@ -21,12 +21,14 @@ class CacheHit:
     score: float            # 0.0 – 1.0 similarity ratio
     original_command: str   # the command that originally triggered the error
     previously_worked: bool # True if fix_worked=True in the log entry
+    category: str           # The ecosystem category of the error
 
 
 def find_cached_fix(
     error_text: str,
     log_file: str = "envfix_log.json",
     threshold: float = SIMILARITY_THRESHOLD,
+    category: str = "general",
 ) -> Optional[CacheHit]:
     """
     Search envfix_log.json for a previously attempted fix for a similar error.
@@ -44,6 +46,7 @@ def find_cached_fix(
         error_text: The current stderr text to match against.
         log_file:   Path to the JSON log file (defaults to cwd).
         threshold:  Minimum SequenceMatcher ratio to accept as a hit.
+        category:   The ecosystem category. Only matches logs with the same category.
 
     Returns:
         A CacheHit with the best-matching fix, or None if no good match found.
@@ -81,6 +84,10 @@ def find_cached_fix(
         if not user_approved:
             continue
 
+        entry_category = entry.get("category", "general")
+        if entry_category != category:
+            continue
+
         stored_error: str = entry.get("error_text") or entry.get("stderr", "")
         fix: str          = entry.get("fix_command") or entry.get("fix", "")
         diagnosis: str    = entry.get("diagnosis", "")
@@ -99,6 +106,7 @@ def find_cached_fix(
             score=score,
             original_command=original_cmd,
             previously_worked=bool(fix_worked),
+            category=entry_category,
         )
 
         if fix_worked:

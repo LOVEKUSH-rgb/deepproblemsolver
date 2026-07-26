@@ -54,3 +54,24 @@ def get_fix_preview(fix_cmd: str) -> Optional[str]:
         if re.search(pattern, fix_cmd, re.IGNORECASE):
             return description  # can be None — that is intentional
     return None   # no rule matched — also no preview
+
+
+def is_destructive(fix_cmd: str) -> bool:
+    """
+    Check if a command contains highly destructive keywords.
+    Used to prompt for explicit 'yes' confirmation.
+    """
+    destructive_patterns = [
+        r"rm\s+.*-[a-z]*r[a-z]*|-rf\b",
+        r"^del\b",
+        r"^rd\s",
+        r"^rmdir\b",
+        r"git\s+reset\s+--hard\b",
+        r"\bsudo\b",
+        r"delete",
+    ]
+    for pattern in destructive_patterns:
+        if re.search(pattern, fix_cmd, re.IGNORECASE):
+            return True
+    return False
+

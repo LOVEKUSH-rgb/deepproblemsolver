@@ -7,14 +7,14 @@ from typing import List, Optional
 import typer
 from rich.console import Console
 from rich.panel import Panel
-from rich.prompt import Confirm
+from rich.prompt import Confirm, Prompt
 from rich.table import Table
 from rich.text import Text
 
 from envfix.ai import _clean_fix, get_diagnosis
 from envfix.cache import find_cached_fix
 from envfix.logger import LOG_FILE, get_history, log_attempt
-from envfix.preview import get_fix_preview
+from envfix.preview import get_fix_preview, is_destructive
 from envfix.runner import run_command
 
 app = typer.Typer(
@@ -87,6 +87,13 @@ def run(
         help="Ollama model tag to use for diagnosis.",
         show_default=True,
     ),
+    category: str = typer.Option(
+        "general",
+        "--category",
+        "-c",
+        help="Ecosystem category (e.g. python, node, docker) to tailor the diagnosis.",
+        show_default=True,
+    ),
 ) -> None:
     """
     Run COMMAND. If it fails, diagnose the error with a local LLM (or cache),
@@ -137,7 +144,7 @@ def run(
     )
 
     # ── Step 3: Check known-fix cache before calling the model ───────────
-    cache_hit = find_cached_fix(error_text)
+    cache_hit = find_cached_fix(error_text, category=category)
     source = "ollama"
 
     if cache_hit:
@@ -165,7 +172,7 @@ def run(
             f"\n[bold yellow]🤖 Asking Ollama ({model}) for a diagnosis…[/bold yellow]"
         )
         try:
-            result = get_diagnosis(stderr=error_text, model=model)
+            result = get_diagnosis(stderr=error_text, model=model, category=category)
         except RuntimeError as exc:
             console.print(f"\n[bold red]Error reaching Ollama:[/bold red] {exc}")
             raise typer.Exit(code=1)
@@ -186,6 +193,7 @@ def run(
                 user_approved=False,
                 fix_worked=None,
                 source="ollama",
+                category=category,
             )
             raise typer.Exit(code=1)
 
@@ -201,7 +209,15 @@ def run(
         )
 
     # ── Step 5: Ask for approval ──────────────────────────────────────────
-    approved = Confirm.ask("\n[bold]Run this fix?[/bold]", default=False)
+    if is_destructive(fix):
+        console.print(
+            "\n[bold red]⚠️ DANGEROUS COMMAND DETECTED[/bold red]\n"
+            "[yellow]This command may delete files, change permissions, or execute remote code.[/yellow]"
+        )
+        response = Prompt.ask("[bold]Type 'yes' to run this fix[/bold]", default="no")
+        approved = (response.strip().lower() == "yes")
+    else:
+        approved = Confirm.ask("\n[bold]Run this fix?[/bold]", default=False)
 
     if not approved:
         console.print("[dim]Exiting without changes.[/dim]")
@@ -213,6 +229,7 @@ def run(
             user_approved=False,
             fix_worked=None,
             source=source,
+            category=category,
         )
         raise typer.Exit(code=0)
 
@@ -238,6 +255,7 @@ def run(
             user_approved=True,
             fix_worked=False,
             source=source,
+            category=category,
         )
         raise typer.Exit(code=1)
 
@@ -273,6 +291,7 @@ def run(
         user_approved=True,
         fix_worked=worked,
         source=source,
+        category=category,
     )
     console.print(f"\n[dim]📝 Attempt logged to {LOG_FILE}[/dim]")
     raise typer.Exit(code=0 if worked else 1)
@@ -310,8 +329,9 @@ def history(
     )
     table.add_column("#",    no_wrap=True)
     table.add_column("When",        style="white",        width=16, no_wrap=True)
-    table.add_column("Command",     style="bold white",   width=35)
-    table.add_column("Fix",         style="cyan",         width=38)
+    table.add_column("Command",     style="bold white",   width=30)
+    table.add_column("Fix",         style="cyan",         width=30)
+    table.add_column("Category",    style="magenta",      width=10, no_wrap=True)
     table.add_column("Approved",    style="white",        width=8,  no_wrap=True)
     table.add_column("Worked",      style="white",        width=8,  no_wrap=True)
     table.add_column("Source",      style="dim",          width=7,  no_wrap=True)
@@ -341,12 +361,14 @@ def history(
             worked_str = "[dim]—[/dim]"
 
         source_str = entry.get("source", "ollama")
+        cat_str = entry.get("category", "general")
 
         table.add_row(
             str(idx),
             when,
             orig_cmd,
             fix_cmd,
+            cat_str,
             approved_str,
             worked_str,
             source_str,

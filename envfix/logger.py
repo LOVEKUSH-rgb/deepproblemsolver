@@ -16,11 +16,12 @@ def log_attempt(
     user_approved: bool,
     fix_worked: Optional[bool],
     source: str = "ollama",
+    category: str = "general",
 ) -> None:
     """
     Append one attempt record to envfix_log.json in the current directory.
 
-    Phase 2 schema
+    Phase 4 schema
     ──────────────
     {
       "timestamp":        ISO-8601 UTC string,
@@ -30,7 +31,8 @@ def log_attempt(
       "fix_command":      the suggested fix command,
       "user_approved":    whether the user said y to apply it,
       "fix_worked":       True/False after retry, None if not approved,
-      "source":           "ollama" | "cache"
+      "source":           "ollama" | "cache",
+      "category":         ecosystem category (e.g. "python", "node", "general")
     }
 
     Args:
@@ -41,6 +43,7 @@ def log_attempt(
         user_approved:    True if the user approved running the fix.
         fix_worked:       True/False after re-run, None if not applied.
         source:           Where the fix came from: "ollama" or "cache".
+        category:         The ecosystem category.
     """
     record: dict[str, Any] = {
         "timestamp":        datetime.now(timezone.utc).isoformat(),
@@ -51,6 +54,7 @@ def log_attempt(
         "user_approved":    user_approved,
         "fix_worked":       fix_worked,
         "source":           source,
+        "category":         category,
     }
 
     log_data = _load_log()
@@ -65,7 +69,7 @@ def get_history(log_file: str = LOG_FILE) -> list[dict[str, Any]]:
     Transparently reads both Phase 1 (legacy) and Phase 2 schemas.
     Each returned dict is guaranteed to have these keys:
         timestamp, original_command, error_text, diagnosis,
-        fix_command, user_approved, fix_worked, source
+        fix_command, user_approved, fix_worked, source, category
     """
     raw = _load_log(log_file)
     normalised = []
@@ -108,4 +112,5 @@ def _normalise_entry(entry: dict[str, Any]) -> dict[str, Any]:
         "user_approved":    entry.get("user_approved") if "user_approved" in entry else entry.get("approved", False),
         "fix_worked":       entry.get("fix_worked") if "fix_worked" in entry else entry.get("worked"),
         "source":           entry.get("source", "ollama"),
+        "category":         entry.get("category", "general"),
     }
