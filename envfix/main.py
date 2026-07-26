@@ -13,7 +13,7 @@ from rich.text import Text
 
 from envfix.ai import _clean_fix, get_diagnosis
 from envfix.cache import find_cached_fix
-from envfix.logger import LOG_FILE, get_history, log_attempt
+from envfix.logger import LOG_FILE, get_history, get_log_file, log_attempt
 from envfix.preview import get_fix_preview, is_destructive
 from envfix.runner import run_command
 
@@ -296,7 +296,7 @@ def run(
         source=source,
         category=category,
     )
-    console.print(f"\n[dim]📝 Attempt logged to {LOG_FILE}[/dim]")
+    console.print(f"\n[dim]📝 Attempt logged to {get_log_file()}[/dim]")
     raise typer.Exit(code=0 if worked else 1)
 
 
@@ -317,7 +317,7 @@ def history(
         console.print(
             "[yellow]No history found.[/yellow] "
             f"Run [bold]envfix run[/bold] on a failing command first.\n"
-            f"(Looking for [dim]{LOG_FILE}[/dim] in the current directory)"
+            f"(Looking for [dim]{get_log_file()}[/dim] in the current directory)"
         )
         return
 

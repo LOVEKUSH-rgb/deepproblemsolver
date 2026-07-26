@@ -1,11 +1,32 @@
 """logger.py — Structured JSON logging + history reader for envfix."""
 
+import getpass
 import json
 import os
+import re
 from datetime import datetime, timezone
 from typing import Any, Optional
 
-LOG_FILE = "envfix_log.json"
+
+def get_log_file() -> str:
+    """
+    Return the path to this user's envfix log file.
+
+    The filename is derived from the OS username so that multiple
+    users on a shared machine each get their own separate history.
+
+    Examples:
+        lovek   -> envfix_log_lovek.json
+        alice   -> envfix_log_alice.json
+    """
+    # Sanitise the username so it's always safe to use in a filename
+    raw = getpass.getuser()
+    safe = re.sub(r"[^A-Za-z0-9_-]", "_", raw)
+    return f"envfix_log_{safe}.json"
+
+
+# Legacy constant kept for backward compat (tests, cache.py default arg)
+LOG_FILE = get_log_file()
 
 
 def log_attempt(
@@ -19,7 +40,7 @@ def log_attempt(
     category: str = "general",
 ) -> None:
     """
-    Append one attempt record to envfix_log.json in the current directory.
+    Append one attempt record to the user's personal log file.
 
     Phase 4 schema
     ──────────────
@@ -57,9 +78,9 @@ def log_attempt(
         "category":         category,
     }
 
-    log_data = _load_log()
+    log_data = _load_log(get_log_file())
     log_data.append(record)
-    _save_log(log_data)
+    _save_log(log_data, get_log_file())
 
 
 def get_history(log_file: str = LOG_FILE) -> list[dict[str, Any]]:

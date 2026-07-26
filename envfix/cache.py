@@ -6,6 +6,8 @@ from dataclasses import dataclass
 from difflib import SequenceMatcher
 from typing import Optional
 
+from envfix.logger import get_log_file
+
 # Minimum similarity ratio (0–1) to consider a log entry a match.
 # 0.85 is deliberately conservative: we only surface cache hits when
 # the error looks nearly identical to a past one.
@@ -26,12 +28,15 @@ class CacheHit:
 
 def find_cached_fix(
     error_text: str,
-    log_file: str = "envfix_log.json",
+    log_file: str = "",           # empty string → resolved at call-time
     threshold: float = SIMILARITY_THRESHOLD,
     category: str = "general",
 ) -> Optional[CacheHit]:
     """
-    Search envfix_log.json for a previously attempted fix for a similar error.
+    Search the user's log for a previously attempted fix for a similar error.
+
+    log_file defaults to the current user's personal log file if not supplied.
+    Passing an explicit path is still supported (used in tests).
 
     Two tiers:
     - Prefers entries where the fix is CONFIRMED to have worked (fix_worked=True).
@@ -51,6 +56,9 @@ def find_cached_fix(
     Returns:
         A CacheHit with the best-matching fix, or None if no good match found.
     """
+    if not log_file:
+        log_file = get_log_file()
+
     if not os.path.exists(log_file):
         return None
 

@@ -4,7 +4,7 @@ from unittest.mock import patch, MagicMock
 
 from envfix.ai import get_diagnosis, PROMPT_TEMPLATE
 from envfix.cache import find_cached_fix
-from envfix.logger import log_attempt, _load_log
+from envfix.logger import _load_log, get_history, get_log_file, log_attempt
 from envfix.preview import is_destructive
 
 def test_ai_prompt_includes_category():
@@ -40,7 +40,7 @@ def test_logger_writes_category(tmp_path, monkeypatch):
         category="node"
     )
     
-    data = _load_log("envfix_log.json")
+    data = _load_log(get_log_file())
     assert len(data) == 1
     assert data[0]["category"] == "node"
 
