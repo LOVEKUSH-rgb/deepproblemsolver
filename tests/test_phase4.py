@@ -9,7 +9,7 @@ from envfix.preview import is_destructive
 
 def test_ai_prompt_includes_category():
     """Test that the category is correctly interpolated into the prompt."""
-    with patch("envfix.ai.ollama") as mock_ollama:
+    with patch("envfix.providers.ollama._ollama") as mock_ollama:
         mock_ollama.chat.return_value = {
             "message": {"content": "DIAGNOSIS: bad\nFIX: echo ok"}
         }

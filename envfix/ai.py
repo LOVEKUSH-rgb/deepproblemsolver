@@ -1,6 +1,5 @@
-"""ai.py — Calls local or cloud AI models and parses their responses."""
+"""ai.py — Prompt building, response parsing, and provider dispatch for envfix."""
 
-import os
 import re
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Optional
@@ -8,21 +7,7 @@ from typing import TYPE_CHECKING, Optional
 if TYPE_CHECKING:
     from envfix.context import CodeContext
 
-
-try:
-    import ollama
-except ImportError:  # pragma: no cover
-    ollama = None  # type: ignore[assignment]
-
-try:
-    import groq
-except ImportError:
-    groq = None
-
-try:
-    from google import genai
-except ImportError:
-    genai = None
+from envfix.providers import get_provider
 
 
 PROMPT_TEMPLATE = (
@@ -125,68 +110,7 @@ def get_diagnosis(
     else:
         prompt = PROMPT_TEMPLATE.format(stderr=stderr, category=category)
 
-    if provider == "ollama":
-        if ollama is None:
-            raise RuntimeError(
-                "The 'ollama' Python package is not installed. "
-                "Run: pip install ollama"
-            )
-        try:
-            response = ollama.chat(
-                model=model,
-                messages=[{"role": "user", "content": prompt}],
-            )
-            raw = response["message"]["content"].strip()
-        except Exception as exc:
-            raise RuntimeError(
-                f"Ollama request failed: {exc}\n"
-                "Make sure the Ollama service is running (`ollama serve`) "
-                f"and the model '{model}' is pulled (`ollama pull {model}`)."
-            ) from exc
-
-    elif provider == "groq":
-        if groq is None:
-            raise RuntimeError("The 'groq' Python package is not installed.")
-        api_key = os.getenv("GROQ_API_KEY")
-        if not api_key:
-            raise RuntimeError(
-                "GROQ_API_KEY environment variable is not set. "
-                "Please set it to your Groq API key."
-            )
-        try:
-            client = groq.Groq(api_key=api_key)
-            actual_model = get_actual_model(model, provider)
-            chat_completion = client.chat.completions.create(
-                messages=[{"role": "user", "content": prompt}],
-                model=actual_model,
-            )
-            raw = chat_completion.choices[0].message.content.strip()
-        except Exception as exc:
-            raise RuntimeError(f"Groq request failed: {exc}") from exc
-
-    elif provider == "gemini":
-        if genai is None:
-            raise RuntimeError("The 'google-genai' Python package is not installed.")
-        api_key = os.getenv("GEMINI_API_KEY")
-        if not api_key:
-            raise RuntimeError(
-                "GEMINI_API_KEY environment variable is not set. "
-                "Please set it to your Gemini API key."
-            )
-        try:
-            client = genai.Client(api_key=api_key)
-            actual_model = get_actual_model(model, provider)
-            response = client.models.generate_content(
-                model=actual_model, 
-                contents=prompt
-            )
-            raw = response.text.strip()
-        except Exception as exc:
-            raise RuntimeError(f"Gemini API call failed: {exc}") from exc
-
-    else:
-        raise ValueError(f"Unknown provider: {provider}")
-
+    raw = get_provider(provider, model).diagnose(prompt)
     return _parse_response(raw)
 
 
