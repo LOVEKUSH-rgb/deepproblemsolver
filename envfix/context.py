@@ -120,3 +120,79 @@ def _read_safe(filepath: str, lineno: int, root: Path) -> Optional[CodeContext]:
         )
     except (ValueError, OSError, UnicodeDecodeError):
         return None
+
+
+def is_external_path(path_str: str, root: Path) -> bool:
+    """Check if a path indicates a framework/stdlib or is outside the project root."""
+    path_str = path_str.replace("\\", "/")
+    if any(marker in path_str for marker in ["site-packages", "node_modules", "lib/python", "vendor/"]):
+        return True
+    
+    path_obj = Path(path_str)
+    if path_obj.is_absolute():
+        try:
+            path_obj.resolve().relative_to(root)
+        except (ValueError, OSError):
+            return True
+            
+    return False
+
+
+def trim_stack_trace(stderr: str, cwd: Optional[str] = None) -> str:
+    """
+    Trim external frames (site-packages, node_modules) from stack traces.
+    Caps the final text at ~12000 chars (approx 3000 tokens), keeping the bottom.
+    """
+    root = Path(cwd or os.getcwd()).resolve()
+    lines = stderr.splitlines()
+    
+    out_lines = []
+    hidden_count = 0
+    skip_next = False
+    
+    for line in lines:
+        if skip_next:
+            skip_next = False
+            # Python's code line under the frame is usually indented
+            if line.startswith("    ") or line.startswith("\t"):
+                continue
+        
+        # Check Python frame
+        py_match = re.search(r'File "([^"]+)",\s*line \d+', line)
+        if py_match:
+            path = py_match.group(1)
+            if is_external_path(path, root):
+                hidden_count += 1
+                skip_next = True
+                continue
+                
+        # Check Node frame
+        node_match = re.search(r'at\s+(?:[^\s(]+\s+\()?([^()]+?\.(?:js|ts|jsx|tsx|mjs|cjs)):(\d+)', line)
+        if node_match:
+            path = node_match.group(1)
+            if is_external_path(path, root):
+                hidden_count += 1
+                continue
+        
+        # Keep this line, flush hidden marker if needed
+        if hidden_count > 0:
+            out_lines.append(f"  [... {hidden_count} external frames hidden ...]")
+            hidden_count = 0
+            
+        out_lines.append(line)
+        
+    if hidden_count > 0:
+        out_lines.append(f"  [... {hidden_count} external frames hidden ...]")
+        
+    trimmed = "\n".join(out_lines)
+    
+    # Fallback if trimming removed everything useful
+    if not re.search(r'[a-zA-Z]', trimmed):
+        trimmed = stderr
+        
+    # Cap at ~12000 chars (keeping the bottom, which holds the actual error)
+    MAX_CHARS = 12000
+    if len(trimmed) > MAX_CHARS:
+        trimmed = "... [truncated] ...\n" + trimmed[-(MAX_CHARS - 25):]
+        
+    return trimmed

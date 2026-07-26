@@ -15,7 +15,7 @@ from rich.text import Text
 from envfix.ai import _clean_fix, get_actual_model, get_diagnosis
 from envfix.cache import find_cached_fix
 from envfix.config import load_config, save_config, reset_config
-from envfix.context import extract_context
+from envfix.context import extract_context, trim_stack_trace
 from envfix.logger import LOG_FILE, get_history, get_log_file, log_attempt
 from envfix.preview import get_fix_preview, is_destructive
 from envfix.runner import run_command
@@ -262,8 +262,9 @@ def run(
             f"\n[bold yellow]🤖 Asking {provider_name} ({display_model}) for a diagnosis…[/bold yellow]"
         )
         try:
+            trimmed_error = trim_stack_trace(error_text)
             result = get_diagnosis(
-                stderr=error_text,
+                stderr=trimmed_error,
                 model=model,
                 category=category,
                 code_context=code_context,

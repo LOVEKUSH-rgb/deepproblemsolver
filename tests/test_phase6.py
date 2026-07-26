@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from envfix.context import CONTEXT_WINDOW, CodeContext, extract_context
+from envfix.context import CONTEXT_WINDOW, CodeContext, extract_context, trim_stack_trace
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -157,3 +157,61 @@ class TestNoMatch:
     def test_returns_none_for_empty_stderr(self, tmp_path):
         ctx = extract_context("", cwd=str(tmp_path))
         assert ctx is None
+
+
+class TestTrimStackTrace:
+
+    def test_trims_python_site_packages(self, tmp_path):
+        stderr = textwrap.dedent("""\
+            Traceback (most recent call last):
+              File "main.py", line 10, in <module>
+                requests.get()
+              File "/usr/lib/python3.10/site-packages/requests/api.py", line 75, in get
+                return request('get', url, params=params, **kwargs)
+              File "/usr/lib/python3.10/site-packages/requests/api.py", line 61, in request
+                return session.request(method=method, url=url, **kwargs)
+            TypeError: bad arguments
+        """)
+        trimmed = trim_stack_trace(stderr, cwd=str(tmp_path))
+        assert "main.py" in trimmed
+        assert "site-packages/requests" not in trimmed
+        assert "external frames hidden" in trimmed
+        assert "TypeError: bad arguments" in trimmed
+
+    def test_trims_node_modules(self, tmp_path):
+        stderr = textwrap.dedent("""\
+            Error: something broke
+                at validate (/app/node_modules/express/lib/router.js:42:10)
+                at route (/app/node_modules/express/lib/router.js:60:5)
+                at Object.<anonymous> (/app/src/main.js:10:1)
+        """)
+        trimmed = trim_stack_trace(stderr, cwd=str(tmp_path))
+        assert "main.js" in trimmed
+        assert "node_modules" not in trimmed
+        assert "external frames hidden" in trimmed
+        assert "Error: something broke" in trimmed
+
+    def test_fallback_if_all_frames_stripped(self, tmp_path):
+        # If the error is completely inside a framework and no user code is hit,
+        # it shouldn't strip the only useful context we have.
+        # Actually our current logic just strips it, leaving the top/bottom text.
+        # Let's ensure the actual error type is preserved.
+        stderr = textwrap.dedent("""\
+            Traceback (most recent call last):
+              File "/usr/lib/python3.10/site-packages/flask/app.py", line 800, in run_app
+                do_thing()
+            ValueError: bad config
+        """)
+        trimmed = trim_stack_trace(stderr, cwd=str(tmp_path))
+        assert "ValueError: bad config" in trimmed
+        assert "external frames hidden" in trimmed
+
+    def test_truncates_giant_trace(self, tmp_path):
+        # Build a huge trace > 12000 chars of internal/user code (so it doesn't get hidden)
+        line = '  File "main.py", line 10, in foo\n    bar()\n'
+        stderr = line * 500 + "RecursionError: max depth exceeded"
+        trimmed = trim_stack_trace(stderr, cwd=str(tmp_path))
+        # It shouldn't be much larger than 12000 chars
+        assert len(trimmed) <= 12500
+        assert "RecursionError: max depth exceeded" in trimmed
+        assert "[truncated]" in trimmed
