@@ -39,6 +39,9 @@ def _quote_join(tokens: List[str]) -> str:
     Without re-quoting we'd produce: python -c import torch  (SyntaxError).
     With re-quoting we produce:      python -c "import torch"  (correct).
     """
+    if len(tokens) == 1:
+        return tokens[0]
+
     parts = []
     for tok in tokens:
         if " " in tok:

@@ -63,9 +63,9 @@ def is_destructive(fix_cmd: str) -> bool:
     """
     destructive_patterns = [
         r"rm\s+.*-[a-z]*r[a-z]*|-rf\b",
-        r"^del\b",
-        r"^rd\s",
-        r"^rmdir\b",
+        r"\bdel\b",
+        r"\brd\s",
+        r"\brmdir\b",
         r"git\s+reset\s+--hard\b",
         r"\bsudo\b",
         r"delete",
