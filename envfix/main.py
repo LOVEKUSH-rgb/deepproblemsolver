@@ -93,7 +93,6 @@ def run(
     category: str = typer.Option(
         "general",
         "--category",
-        "-c",
         help="Ecosystem category (e.g. python, node, docker) to tailor the diagnosis.",
         show_default=True,
     ),
