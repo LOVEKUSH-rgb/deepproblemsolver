@@ -147,11 +147,10 @@ def config_cmd(
 )
 def run(
     ctx: typer.Context,
-    model: str = typer.Option(
-        "llama3.1:8b",
+    model: Optional[str] = typer.Option(
+        None,
         "--model",
-        help="Ollama model tag to use for diagnosis.",
-        show_default=True,
+        help="Model tag to use for diagnosis. [default: llama3.1:8b (or config)]",
     ),
     category: Optional[str] = typer.Option(
         None,
@@ -201,6 +200,8 @@ def run(
         provider = config.get("default_provider", "ollama")
     if not category:
         category = config.get("default_category", "general")
+    if not model:
+        model = config.get("default_model", "llama3.1:8b")
 
     # ── Step 1: Run the original command ─────────────────────────────────
     console.print(f"\n[bold cyan]▶ Running:[/bold cyan] {cmd}\n")
@@ -267,7 +268,10 @@ def run(
             f"\n[bold yellow]🤖 Asking {provider_name} ({display_model}) for a diagnosis…[/bold yellow]"
         )
         try:
-            trimmed_error = trim_stack_trace(error_text)
+            trimmed_error = trim_stack_trace(
+                error_text,
+                ignore_patterns=config.get("ignore_patterns", [])
+            )
             result = get_diagnosis(
                 stderr=trimmed_error,
                 model=model,
@@ -412,6 +416,16 @@ def run(
                     if Confirm.ask(f"\n[bold]Also add '{pkg}' to requirements.txt?[/bold]", default=False):
                         update_requirements_txt(req_path, pkg)
                         console.print(f"[dim]Added {pkg} to requirements.txt.[/dim]")
+                        
+        # ── Post Fix Hook ───────────────────────────────────────────────────────
+        hook = config.get("post_fix_hook")
+        if hook:
+            console.print(f"\n[bold magenta]⚙ Running post-fix hook:[/bold magenta] {hook}")
+            hook_stdout, hook_stderr, _ = run_command(hook)
+            if hook_stdout:
+                console.print(hook_stdout, end="")
+            if hook_stderr:
+                console.print(hook_stderr, end="")
     else:
         console.print(
             "\n[bold red]✗ Original command still failed after the fix "

@@ -138,19 +138,31 @@ def is_external_path(path_str: str, root: Path) -> bool:
     return False
 
 
-def trim_stack_trace(stderr: str, cwd: Optional[str] = None) -> str:
+def trim_stack_trace(stderr: str, cwd: Optional[str] = None, ignore_patterns: Optional[list[str]] = None) -> str:
     """
     Trim external frames (site-packages, node_modules) from stack traces.
+    Strips any lines matching the provided regex patterns (ignore_patterns).
     Caps the final text at ~12000 chars (approx 3000 tokens), keeping the bottom.
     """
     root = Path(cwd or os.getcwd()).resolve()
     lines = stderr.splitlines()
+    
+    compiled_patterns = []
+    if ignore_patterns:
+        for p in ignore_patterns:
+            try:
+                compiled_patterns.append(re.compile(p))
+            except re.error:
+                pass
     
     out_lines = []
     hidden_count = 0
     skip_next = False
     
     for line in lines:
+        if compiled_patterns and any(p.search(line) for p in compiled_patterns):
+            continue
+            
         if skip_next:
             skip_next = False
             # Python's code line under the frame is usually indented

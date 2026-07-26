@@ -3,6 +3,12 @@ import sys
 from pathlib import Path
 from typing import Dict, Any
 
+import typer
+import yaml
+from rich.console import Console
+
+console = Console()
+
 try:
     import tomllib
 except ImportError:
@@ -20,8 +26,32 @@ def load_config() -> Dict[str, Any]:
     
     try:
         with open(CONFIG_FILE, "rb") as f:
-            return tomllib.load(f)
+            global_config = tomllib.load(f)
     except Exception:
+        global_config = {}
+
+    project_config = load_project_config()
+    
+    # Merge project config over global config
+    for k, v in project_config.items():
+        global_config[k] = v
+        
+    return global_config
+
+def load_project_config() -> Dict[str, Any]:
+    """Load the project-specific YAML configuration file."""
+    yaml_file = Path.cwd() / ".envfix.yaml"
+    if not yaml_file.exists():
+        return {}
+        
+    try:
+        with open(yaml_file, "r", encoding="utf-8") as f:
+            data = yaml.safe_load(f)
+            return data if isinstance(data, dict) else {}
+    except yaml.YAMLError as e:
+        console.print(f"\n[bold red]✗ Failed to parse .envfix.yaml:[/bold red]\n{e}")
+        raise typer.Exit(code=1)
+    except OSError:
         return {}
 
 def save_config(data: Dict[str, Any]) -> None:

@@ -28,6 +28,7 @@ dependencies = [
     "google-genai>=0.1.0", # Python client for Gemini API
     "tomli>=2.0.1; python_version < '3.11'",
     "tomli-w>=1.0.0",
+    "pyyaml>=6.0",
 ]
 
 [project.optional-dependencies]
