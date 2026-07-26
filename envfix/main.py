@@ -24,6 +24,11 @@ from envfix.dependencies import (
     update_requirements_txt,
     update_pyproject_toml,
 )
+from envfix.git_utils import (
+    is_in_git_repo,
+    has_uncommitted_changes,
+    create_safety_stash,
+)
 
 app = typer.Typer(
     name="envfix",
@@ -334,6 +339,18 @@ def run(
         )
         raise typer.Exit(code=0)
 
+    # ── Git Safety Backup ──────────────────────────────────────────────────
+    stash_created = False
+    if not is_in_git_repo():
+        console.print(
+            "[bold yellow]Warning: not in a git repository. envfix cannot create "
+            "a safety backup before applying fixes. Consider running 'git init' "
+            "for safety.[/bold yellow]\n"
+        )
+    elif has_uncommitted_changes():
+        if create_safety_stash():
+            stash_created = True
+
     # ── Step 6: Run the fix, then re-run the original command ─────────────
     console.print(f"\n[bold cyan]⚙ Applying fix:[/bold cyan] {fix}\n")
     fix_stdout, fix_stderr, fix_rc = run_command(fix)
@@ -400,6 +417,12 @@ def run(
             "\n[bold red]✗ Original command still failed after the fix "
             f"(exit code {retry_rc}). "
             "You may need to try a different approach.[/bold red]"
+        )
+
+    if stash_created:
+        console.print(
+            "\n[bold cyan]A safety backup was created. If this fix caused "
+            "problems, run: git stash pop[/bold cyan]"
         )
 
     # ── Step 8: Log everything ────────────────────────────────────────────
