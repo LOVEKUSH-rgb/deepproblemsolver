@@ -16,8 +16,8 @@ def get_log_file() -> str:
     users on a shared machine each get their own separate history.
 
     Examples:
-        lovek   -> envfix_log_lovek.json
         alice   -> envfix_log_alice.json
+        bob     -> envfix_log_bob.json
     """
     # Sanitise the username so it's always safe to use in a filename
     raw = getpass.getuser()

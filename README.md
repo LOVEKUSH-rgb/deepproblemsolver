@@ -1,20 +1,42 @@
 # envfix 🛠️
 
-> **Automatically diagnose and fix Python/ML environment errors using a local LLM — fully offline, no paid API.**
+> **`envfix` wraps any failing shell command, asks a local AI model what went wrong, and proposes a one-click fix — fully offline, no API key, no cloud.**
 
-When your `pip install`, PyTorch import, or CUDA setup fails, `envfix` catches the error, asks a local [Ollama](https://ollama.com) model what went wrong, proposes a one-liner fix, waits for your approval, runs it, and tells you if the original command now works.
+```
+without envfix                          with envfix
+──────────────────────────────────────  ──────────────────────────────────────────
+$ python train.py                       $ envfix run python train.py
 
-> ⚠️ **Early / experimental** — built for Python/ML environment errors. Feedback welcome via [GitHub Issues](https://github.com/LOVEKUSH-rgb/deepproblemsolver/issues).
+ModuleNotFoundError:                    ✗ Command Failed
+  No module named 'torch'              │ ModuleNotFoundError: No module named 'torch'
+
+↓ Google the error                      🤖 Asking Ollama (llama3.1:8b)…
+↓ Stack Overflow rabbit hole
+↓ Try three different pip commands      ╭─────────── envfix Suggestion ────────────╮
+↓ Wrong CUDA version                    │ DIAGNOSIS                                │
+↓ Try again                             │ PyTorch is not installed in this env.    │
+                                        │                                          │
+~20 minutes later:                      │ FIX                                      │
+$ python -m pip install torch           │ python -m pip install torch              │
+                                        ╰──────────────────────────────────────────╯
+
+                                        Run this fix? [y/n] (n): y
+                                        ✓ Success! The fix resolved the issue.
+                                        (total time: ~30 seconds)
+```
+
+> ⚠️ **Early / experimental.** Works best for common Python, Node.js, and
+> package-manager errors. See [Known limitations](#known-limitations).
 
 ---
 
 ## Prerequisites
 
-| Requirement | Version |
-|---|---|
-| Python | ≥ 3.10 |
-| [Ollama](https://ollama.com/download) | latest |
-| RAM | ≥ 8 GB for `llama3.1:8b`  ·  ≥ 4 GB for `qwen2.5:3b` |
+| Requirement | Version | Why |
+|---|---|---|
+| Python | ≥ 3.10 | f-strings, match syntax |
+| [Ollama](https://ollama.com/download) | latest | runs the local AI model |
+| RAM | ≥ 8 GB | for `llama3.1:8b` — or ≥ 4 GB for `qwen2.5:3b` |
 
 ---
 
@@ -22,10 +44,9 @@ When your `pip install`, PyTorch import, or CUDA setup fails, `envfix` catches t
 
 ### Step 1 — Install Ollama
 
-Download from **[ollama.com/download](https://ollama.com/download)** (Windows / macOS / Linux).
+Download from **[ollama.com/download](https://ollama.com/download)** (Windows, macOS, Linux).
 
 On Linux you can also run:
-
 ```bash
 curl -fsSL https://ollama.com/install.sh | sh
 ```
@@ -33,21 +54,22 @@ curl -fsSL https://ollama.com/install.sh | sh
 ### Step 2 — Pull a model
 
 ```bash
-# Recommended (needs ~8 GB RAM)
+# Recommended (needs ~8 GB RAM free)
 ollama pull llama3.1:8b
 
-# Lighter alternatives (≥ 4 GB RAM)
+# Lighter alternatives if you have ≤ 4 GB free RAM
 ollama pull qwen2.5:3b
 ollama pull llama3.2:3b
 ```
 
-### Step 3 — Start the Ollama service
+### Step 3 — Start Ollama
 
 ```bash
 ollama serve
 ```
 
-> **Windows tip:** The Ollama installer adds a system-tray icon that starts the service automatically on login — you can skip this step.
+> **Windows tip:** The Ollama installer adds a system-tray icon that starts the
+> service automatically on login — you may be able to skip this step.
 
 ### Step 4 — Install envfix
 
@@ -57,7 +79,14 @@ cd deepproblemsolver
 pip install -e .
 ```
 
-That's it. The `envfix` command is now available globally (or inside your active venv).
+> **Why `-e`?** Editable mode means changes to the source code take effect
+> immediately without reinstalling. For a "permanent" install just use
+> `pip install .` instead.
+
+Verify the install:
+```bash
+envfix --help
+```
 
 ---
 
@@ -67,63 +96,81 @@ That's it. The `envfix` command is now available globally (or inside your active
 envfix run <your failing command>
 ```
 
-### Basic example
+### Common examples
 
 ```bash
-envfix run python train.py --gpu 0
-```
-
-```
-▶ Running: python train.py --gpu 0
-
-╭─────────────── ✗ Command Failed ───────────────╮
-│ RuntimeError: CUDA error: no kernel image is   │
-│ available for execution on the device          │
-╰────────────────────────────────────────────────╯
-
-🤖 Asking Ollama (llama3.1:8b) for a diagnosis…
-
-╭──────────── envfix Suggestion ─────────────────╮
-│ DIAGNOSIS                                      │
-│ Your PyTorch build doesn't match the CUDA      │
-│ driver version on this machine.                │
-│                                                │
-│ FIX                                            │
-│ python -m pip install torch --index-url        │
-│ https://download.pytorch.org/whl/cu118         │
-╰────────────────────────────────────────────────╯
-
-📋 What this will do: Installs a package from PyPI
-
-Run this fix? [y/n] (n):
-```
-
-### More examples
-
-```bash
-# Missing module
-envfix run python -m non_existent_module_xyz
+# Missing Python module
+envfix run python -m non_existent_module
 
 # Broken requirements file
 envfix run python -m pip install -r requirements.txt
 
-# Use a lighter model
+# Node / npm error
+envfix run npm run build --category node
+
+# CUDA / GPU error
+envfix run python train.py --gpu 0
+
+# Use a lighter model on a low-RAM machine
 envfix run python train.py --model qwen2.5:3b
 
-# View past attempts
+# Check your fix history
 envfix history
 envfix history --last 5
+```
+
+### What you'll see
+
+```
+▶ Running: python -m pip install -r requirements.txt
+
+╭──────────── ✗ Command Failed ────────────╮
+│ ERROR: Could not find a version that     │
+│ satisfies the requirement bogus-pkg      │
+╰──────────────────────────────────────────╯
+
+🤖 Asking Ollama (llama3.1:8b) for a diagnosis…
+
+╭────────── envfix Suggestion ─────────────╮
+│ DIAGNOSIS                                │
+│ The package 'bogus-pkg' does not exist   │
+│ on PyPI.                                 │
+│                                          │
+│ FIX                                      │
+│ python -m pip install <correct-name>     │
+╰──────────────────────────────────────────╯
+
+📋 What this will do: Installs a package from PyPI
+
+Run this fix? [y/n] (n): y
+```
+
+If the same (or very similar) error has appeared before, `envfix` skips the
+model call entirely and shows the cached suggestion instead:
+
+```
+⚡ Found a previously verified fix (97% match) — skipping model call.
+```
+
+If the suggested fix contains a destructive command (`rm -rf`, `sudo`,
+`delete`, etc.), `envfix` shows an explicit warning and requires you to type
+`yes` in full:
+
+```
+⚠️ DANGEROUS COMMAND DETECTED
+This command may delete files, change permissions, or execute remote code.
+Type 'yes' to run this fix (no):
 ```
 
 ### Command reference
 
 | Command | What it does |
 |---|---|
-| `envfix run <cmd>` | Run a command; diagnose + propose fix if it fails |
+| `envfix run <cmd>` | Run a command; diagnose + suggest fix on failure |
 | `envfix run <cmd> --model <tag>` | Use a specific Ollama model |
-| `envfix history` | Show the last 20 attempts from `envfix_log.json` |
+| `envfix run <cmd> --category <eco>` | Hint the ecosystem (`python`, `node`, `docker` …) |
+| `envfix history` | Show the last 20 attempts |
 | `envfix history --last N` | Show last N attempts |
-| `envfix --help` | Full help |
 
 ---
 
@@ -133,86 +180,94 @@ envfix history --last 5
 envfix run <cmd>
      │
      ▼
- Run cmd via subprocess
+ subprocess: run the command, capture stderr
      │
   succeeded? ──Yes──► ✓ Nothing to fix
      │
     No
      ▼
- Check envfix_log.json for a similar past error (fuzzy match ≥ 85%)
+ Check per-user log (envfix_log_<username>.json) for similar past error
      │
-  Cache hit? ──Yes──► Show cached fix (skip model call)
+  Cache hit ──Yes──► Show cached fix (skip Ollama)
      │
     No
      ▼
- Send stderr to Ollama with a structured prompt
+ Build structured prompt → POST to local Ollama service
      │
      ▼
- Parse DIAGNOSIS + FIX from the response
+ Parse DIAGNOSIS + FIX from model response
      │
      ▼
- Show dry-run description for risky commands (rm, setx, sudo …)
+ Dry-run description for non-obvious commands
+ Destructive guard for dangerous commands (requires "yes" in full)
      │
      ▼
- Ask "Run this fix? [y/n]"
-     │
-    Yes
-     ▼
- Apply fix → re-run original command
+ User approves → apply fix → re-run original command
      │
      ▼
- Report success/failure + write to envfix_log.json
+ Log result to envfix_log_<username>.json
 ```
 
 ---
 
-## Log file
+## Per-user history
 
-Every attempt is recorded to `envfix_log.json` in the directory where you run `envfix`. The file is excluded from git via `.gitignore` so your personal error history never gets committed.
+Every attempt is logged to `envfix_log_<username>.json` in the directory where
+you run `envfix`. Each user on the same machine gets their own separate file —
+no shared state, no accounts.
 
-Each entry looks like:
+The file is excluded from git by `.gitignore` so your personal history never
+gets committed.
 
+Sample entry:
 ```json
 {
-  "timestamp": "2026-07-25T14:45:00Z",
-  "original_command": "python train.py --gpu 0",
+  "timestamp": "2026-07-26T08:00:00Z",
+  "original_command": "python train.py",
   "error_text": "ModuleNotFoundError: No module named 'torch'",
   "diagnosis": "PyTorch is not installed in this environment.",
   "fix_command": "python -m pip install torch",
   "user_approved": true,
   "fix_worked": true,
-  "source": "ollama"
+  "source": "ollama",
+  "category": "python"
 }
 ```
 
-| Field | Meaning |
-|---|---|
-| `user_approved` | Did you say **y** to the fix? |
-| `fix_worked` | Did the original command succeed after the fix? |
-| `fix_worked: null` | Fix was not approved — no retry attempted |
-| `source` | `"ollama"` = fresh model call  ·  `"cache"` = reused from log |
+---
+
+## Known limitations
+
+- **Model quality varies.** `envfix` is only as good as the local model you
+  pull. Smaller models (`qwen2.5:3b`, `llama3.2:3b`) sometimes produce vague
+  or wrong diagnoses for complex errors. `llama3.1:8b` is the recommended
+  minimum.
+- **Works best for common errors.** Highly project-specific errors (e.g. a bug
+  in your custom C extension) will likely produce generic suggestions.
+- **Windows path assumptions.** The tool normalises `pip install` →
+  `python -m pip install` because `pip` is often not on the Windows PATH. On
+  macOS/Linux both forms work but the normalisation is harmless.
+- **Single fix per failure.** `envfix` proposes one fix at a time. If the
+  first fix doesn't work, run `envfix run <cmd>` again — the model may suggest
+  something different.
+- **Needs Ollama running.** If `ollama serve` is not active, `envfix` exits
+  with a clear error message rather than a cryptic timeout.
+- **Still early.** Prompt engineering and cache fuzzy-matching were tuned for
+  Python/ML and Node errors. Other ecosystems (Rust, Docker, CMake …) will
+  work but with less accuracy.
 
 ---
 
-## Running tests
+## Running the tests
 
 ```bash
-# From the repo root — no Ollama needed
-python -m pip install pytest
+# No Ollama needed — all tests are offline
 python -m pytest tests/ -v
 ```
 
-The test suite (55 tests across 2 files) covers:
-
-| Module | Tests |
-|---|---|
-| AI response parser | Strict format, case, whitespace, fallback |
-| `_clean_fix()` normaliser | Backtick stripping, `pip` → `python -m pip` |
-| Subprocess runner | Success, failure, stderr capture, bad commands |
-| JSON logger | Schema, appending, corrupt-file recovery |
-| Known-fix cache | Exact match, fuzzy match, Phase 1 compat, tier priority |
-| Dry-run preview | Safe vs risky command classification |
-| History reader | Ordering, Phase 1 normalisation, key presence |
+67 tests across three files covering the AI parser, subprocess runner, JSON
+logger, two-tier cache, dry-run preview, safety guardrails, and per-category
+matching.
 
 ---
 
@@ -223,23 +278,19 @@ The test suite (55 tests across 2 files) covers:
 | `Error reaching Ollama: Connection refused` | Run `ollama serve` in a separate terminal |
 | `model "llama3.1:8b" not found` | Run `ollama pull llama3.1:8b` |
 | `envfix: command not found` | Run `pip install -e .` from the repo root |
-| Model returns garbled output | Try `--model qwen2.5:3b`; raw output is shown instead of crashing |
-| `'pip' is not recognized` | Always use `python -m pip install …` on Windows |
-| Fix runs but original still fails | The LLM diagnosis was wrong — try running again or fix manually |
+| Fix runs but original still fails | The model diagnosis was wrong — run again or fix manually |
+| Model returns garbled output | Try `--model qwen2.5:3b` |
+| Always shows cached (wrong) fix | Cache threshold is 0.85; if the fix is wrong, say `n` and re-run — Ollama will be called fresh |
 
 ---
 
-## Roadmap
+## Contributing
 
-| Phase | Status |
-|---|---|
-| Phase 1 — Core loop: run → diagnose → fix → retry | ✅ Done |
-| Phase 2 — Cache, dry-run preview, history command | ✅ Done |
-| Phase 3 — Distribution, README, pyproject.toml | ✅ Done |
-| Phase 4 — Multi-user memory, non-Python/ML errors | 🔜 Planned |
+See [CONTRIBUTING.md](CONTRIBUTING.md) for the module map, ground rules, and
+how to submit a fix.
 
 ---
 
 ## License
 
-MIT — see [LICENSE](LICENSE) or use freely.
+[MIT](LICENSE)
