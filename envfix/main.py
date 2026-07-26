@@ -1,5 +1,6 @@
 """main.py — Typer CLI entry point for envfix (Phase 2)."""
 
+import os
 import sys
 from datetime import datetime, timezone
 from typing import List, Optional
@@ -18,6 +19,11 @@ from envfix.context import extract_context
 from envfix.logger import LOG_FILE, get_history, get_log_file, log_attempt
 from envfix.preview import get_fix_preview, is_destructive
 from envfix.runner import run_command
+from envfix.dependencies import (
+    extract_package_name,
+    update_requirements_txt,
+    update_pyproject_toml,
+)
 
 app = typer.Typer(
     name="envfix",
@@ -371,6 +377,23 @@ def run(
         console.print(
             "\n[bold green]✓ Success! The fix resolved the issue.[/bold green]"
         )
+        
+        # ── Dependency auto-append feature ──────────────────────────────────────
+        if "ModuleNotFoundError" in error_text or "ImportError" in error_text:
+            pkg = extract_package_name(fix)
+            if pkg:
+                # Check for pyproject.toml
+                pyproject_path = os.path.join(os.getcwd(), "pyproject.toml")
+                req_path = os.path.join(os.getcwd(), "requirements.txt")
+                
+                if os.path.exists(pyproject_path):
+                    if Confirm.ask(f"\n[bold]Also add '{pkg}' to pyproject.toml?[/bold]", default=False):
+                        update_pyproject_toml(pyproject_path, pkg)
+                        console.print(f"[dim]Added {pkg} to pyproject.toml.[/dim]")
+                elif os.path.exists(req_path):
+                    if Confirm.ask(f"\n[bold]Also add '{pkg}' to requirements.txt?[/bold]", default=False):
+                        update_requirements_txt(req_path, pkg)
+                        console.print(f"[dim]Added {pkg} to requirements.txt.[/dim]")
     else:
         console.print(
             "\n[bold red]✗ Original command still failed after the fix "
