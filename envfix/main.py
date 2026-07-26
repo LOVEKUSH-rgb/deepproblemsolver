@@ -456,6 +456,116 @@ def run(
     raise typer.Exit(code=0 if worked else 1)
 
 
+@app.command("diagnose")
+def diagnose_cmd(
+    log_file: str = typer.Argument(
+        ...,
+        help="Path to the file containing the failed test/build logs.",
+    ),
+    ci: bool = typer.Option(
+        False,
+        "--ci",
+        help="Output raw Markdown suitable for a CI/CD pipeline (e.g. GitHub PR comment).",
+    ),
+    model: Optional[str] = typer.Option(
+        None,
+        "--model",
+        help="Model tag to use for diagnosis.",
+    ),
+    category: Optional[str] = typer.Option(
+        None,
+        "--category",
+        help="Ecosystem category.",
+    ),
+    provider: Optional[str] = typer.Option(
+        None,
+        "--provider",
+        help="AI provider to use (ollama, groq, gemini).",
+    ),
+    no_cache: bool = typer.Option(
+        False,
+        "--no-cache",
+        help="Bypass the local cache and force a new AI diagnosis.",
+    ),
+) -> None:
+    """
+    Read an error log file and output a diagnosis and suggested fix.
+    Use --ci to output raw Markdown for integration into CI pipelines.
+    """
+    if not os.path.exists(log_file):
+        console.print(f"[bold red]Error:[/bold red] Log file '{log_file}' not found.")
+        raise typer.Exit(code=1)
+
+    with open(log_file, "r", encoding="utf-8", errors="replace") as f:
+        error_text = f.read().strip()
+        
+    if not error_text:
+        console.print("[bold red]Error:[/bold red] Log file is empty.")
+        raise typer.Exit(code=1)
+
+    config = load_config()
+    if not provider:
+        provider = config.get("default_provider", "ollama")
+    if not category:
+        category = config.get("default_category", "general")
+    if not model:
+        model = config.get("default_model", "llama3.1:8b")
+
+    code_context = extract_context(error_text)
+    
+    if not no_cache:
+        cache_hit = find_cached_fix(error_text, category=category)
+    else:
+        cache_hit = None
+        
+    diagnosis_text = ""
+    fix_text = ""
+    source_tag = ""
+    
+    if cache_hit:
+        diagnosis_text = cache_hit.diagnosis
+        fix_text = _clean_fix(cache_hit.fix)
+        source_tag = f" (from cache — {cache_hit.score:.0%} match)"
+    else:
+        try:
+            trimmed_error = trim_stack_trace(
+                error_text,
+                ignore_patterns=config.get("ignore_patterns", [])
+            )
+            result = get_diagnosis(
+                stderr=trimmed_error,
+                model=model,
+                category=category,
+                code_context=code_context,
+                provider=provider,
+            )
+            diagnosis_text = result.diagnosis
+            fix_text = result.fix
+        except Exception as exc:
+            if ci:
+                print(f"**envfix encountered an error:** {exc}")
+            else:
+                console.print(f"[bold red]Error reaching {provider}:[/bold red] {exc}")
+            raise typer.Exit(code=1)
+            
+    if ci:
+        # Output pure Markdown to standard out for CI capture
+        markdown_output = f"""### 🛠️ envfix Suggestion{source_tag}
+
+#### Diagnosis
+{diagnosis_text}
+
+#### Proposed Fix
+```bash
+{fix_text}
+```
+"""
+        print(markdown_output)
+    else:
+        _show_fix_panel(diagnosis_text, fix_text, "cache" if cache_hit else provider, cache_hit.score if cache_hit else None)
+    raise typer.Exit(code=0)
+
+
 @app.command()
 def history(
     last: int = typer.Option(20, "--last", "-n", help="Show the last N attempts."),
