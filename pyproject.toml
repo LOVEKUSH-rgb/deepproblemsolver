@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "envfix"
-version = "0.5.0"
+version = "0.5.1"
 description = "CLI tool that diagnoses and auto-fixes Python/ML environment errors using a local LLM."
 readme = "README.md"
 requires-python = ">=3.10"
