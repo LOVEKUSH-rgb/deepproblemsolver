@@ -549,17 +549,18 @@ def diagnose_cmd(
             raise typer.Exit(code=1)
             
     if ci:
+        # Extract a short error summary from the log (usually the last line for Python tracebacks)
+        error_lines = [line.strip() for line in error_text.splitlines() if line.strip()]
+        short_error = error_lines[-1][:200] if error_lines else "Unknown Error"
+        
         # Output pure Markdown to standard out for CI capture
-        markdown_output = f"""### 🛠️ envfix Suggestion{source_tag}
-
-#### Diagnosis
-{diagnosis_text}
-
-#### Proposed Fix
+        markdown_output = f"""## 🔧 envfix diagnosis{source_tag}
+**Error detected:** {short_error}
+**Diagnosis:** {diagnosis_text}
+**Suggested fix:**
 ```bash
 {fix_text}
-```
-"""
+```"""
         print(markdown_output)
     else:
         _show_fix_panel(diagnosis_text, fix_text, "cache" if cache_hit else provider, cache_hit.score if cache_hit else None)
