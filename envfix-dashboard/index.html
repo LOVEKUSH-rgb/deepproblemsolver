@@ -1,0 +1,588 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>envfix Analytics</title>
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap" rel="stylesheet">
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    
+    <style>
+        :root {
+            --bg-color: #0f172a;
+            --text-main: #f8fafc;
+            --text-muted: #94a3b8;
+            --card-bg: rgba(255, 255, 255, 0.03);
+            --card-border: rgba(255, 255, 255, 0.08);
+            --accent-gradient: linear-gradient(135deg, #3b82f6, #8b5cf6);
+            --danger: #ef4444;
+            --success: #10b981;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            background-color: var(--bg-color);
+            color: var(--text-main);
+            font-family: 'Inter', sans-serif;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            overflow-x: hidden;
+            position: relative;
+        }
+
+        /* Subtle background glow effects */
+        body::before, body::after {
+            content: '';
+            position: absolute;
+            width: 500px;
+            height: 500px;
+            border-radius: 50%;
+            filter: blur(120px);
+            z-index: -1;
+            opacity: 0.15;
+        }
+        body::before {
+            top: -100px;
+            left: -100px;
+            background: #3b82f6;
+        }
+        body::after {
+            bottom: -100px;
+            right: -100px;
+            background: #8b5cf6;
+        }
+
+        /* Glassmorphism utility */
+        .glass {
+            background: var(--card-bg);
+            border: 1px solid var(--card-border);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border-radius: 16px;
+            box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.2);
+        }
+
+        .container {
+            max-width: 1100px;
+            margin: 0 auto;
+            padding: 2rem;
+            width: 100%;
+        }
+
+        /* Header */
+        header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 3rem;
+            animation: fadeInDown 0.6s ease-out;
+        }
+
+        .logo h1 {
+            font-size: 2rem;
+            font-weight: 700;
+            background: var(--accent-gradient);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            letter-spacing: -1px;
+        }
+
+        .settings-btn {
+            background: transparent;
+            border: 1px solid var(--card-border);
+            color: var(--text-muted);
+            padding: 0.5rem 1rem;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.2s;
+            font-family: 'Inter', sans-serif;
+            font-weight: 600;
+        }
+
+        .settings-btn:hover {
+            color: var(--text-main);
+            border-color: var(--text-muted);
+            background: rgba(255, 255, 255, 0.05);
+        }
+
+        /* Metrics Grid */
+        .metrics-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 1.5rem;
+            margin-bottom: 2rem;
+        }
+
+        .metric-card {
+            padding: 1.5rem;
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
+            animation: fadeInUp 0.6s ease-out backwards;
+        }
+        
+        .metric-card:nth-child(1) { animation-delay: 0.1s; }
+        .metric-card:nth-child(2) { animation-delay: 0.2s; }
+        .metric-card:nth-child(3) { animation-delay: 0.3s; }
+
+        .metric-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 12px 40px 0 rgba(0, 0, 0, 0.3);
+            border-color: rgba(255,255,255,0.15);
+        }
+
+        .metric-title {
+            font-size: 0.9rem;
+            color: var(--text-muted);
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .metric-value {
+            font-size: 3rem;
+            font-weight: 700;
+            color: var(--text-main);
+        }
+
+        /* Chart Section */
+        .chart-section {
+            padding: 2rem;
+            margin-top: 1rem;
+            animation: fadeInUp 0.6s ease-out 0.4s backwards;
+        }
+
+        .chart-header {
+            margin-bottom: 1.5rem;
+        }
+
+        .chart-header h2 {
+            font-size: 1.25rem;
+            font-weight: 600;
+        }
+
+        .chart-container {
+            position: relative;
+            height: 400px;
+            width: 100%;
+        }
+
+        /* Empty / Loading States */
+        .state-container {
+            display: none; /* hidden by default */
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+            padding: 4rem 2rem;
+            animation: fadeIn 0.4s ease;
+        }
+
+        .state-container.active {
+            display: flex;
+        }
+
+        .state-container h2 {
+            font-size: 1.5rem;
+            margin-bottom: 1rem;
+        }
+
+        .state-container p {
+            color: var(--text-muted);
+            max-width: 500px;
+            line-height: 1.6;
+        }
+
+        /* Auth Modal */
+        #auth-modal {
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(15, 23, 42, 0.8);
+            backdrop-filter: blur(5px);
+            display: none;
+            justify-content: center;
+            align-items: center;
+            z-index: 100;
+        }
+
+        #auth-modal.active {
+            display: flex;
+            animation: fadeIn 0.3s ease;
+        }
+
+        .modal-content {
+            width: 100%;
+            max-width: 450px;
+            padding: 2.5rem;
+        }
+
+        .modal-content h2 {
+            margin-bottom: 0.5rem;
+        }
+
+        .modal-content p {
+            color: var(--text-muted);
+            margin-bottom: 2rem;
+            font-size: 0.95rem;
+        }
+
+        .input-group {
+            margin-bottom: 1.5rem;
+        }
+
+        .input-group label {
+            display: block;
+            margin-bottom: 0.5rem;
+            font-size: 0.9rem;
+            font-weight: 600;
+            color: var(--text-muted);
+        }
+
+        .input-group input {
+            width: 100%;
+            padding: 0.75rem 1rem;
+            background: rgba(0, 0, 0, 0.2);
+            border: 1px solid var(--card-border);
+            border-radius: 8px;
+            color: var(--text-main);
+            font-family: inherit;
+            font-size: 1rem;
+            outline: none;
+            transition: border-color 0.2s;
+        }
+
+        .input-group input:focus {
+            border-color: #3b82f6;
+        }
+
+        .btn-primary {
+            width: 100%;
+            padding: 0.875rem;
+            background: var(--accent-gradient);
+            border: none;
+            border-radius: 8px;
+            color: white;
+            font-weight: 600;
+            font-size: 1rem;
+            cursor: pointer;
+            transition: opacity 0.2s, transform 0.1s;
+        }
+
+        .btn-primary:hover {
+            opacity: 0.9;
+        }
+
+        .btn-primary:active {
+            transform: scale(0.98);
+        }
+
+        /* Animations */
+        @keyframes fadeInDown {
+            from { opacity: 0; transform: translateY(-20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        @keyframes fadeInUp {
+            from { opacity: 0; transform: translateY(20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+
+        /* Dashboard content wrapper */
+        #dashboard-content {
+            display: none;
+        }
+        #dashboard-content.active {
+            display: block;
+        }
+    </style>
+</head>
+<body>
+
+    <!-- Auth Modal -->
+    <div id="auth-modal">
+        <div class="modal-content glass">
+            <h2>Connect Dashboard</h2>
+            <p>Enter your team details to view envfix analytics.</p>
+            
+            <div class="input-group">
+                <label>Team ID</label>
+                <input type="text" id="teamIdInput" placeholder="e.g. 1" />
+            </div>
+            <div class="input-group">
+                <label>API Key</label>
+                <input type="password" id="apiKeyInput" placeholder="8d6bc28c-..." />
+            </div>
+            
+            <button class="btn-primary" onclick="saveAuthAndLoad()">View Dashboard</button>
+        </div>
+    </div>
+
+    <!-- Main App -->
+    <div class="container">
+        <header>
+            <div class="logo">
+                <h1>envfix Analytics</h1>
+            </div>
+            <button class="settings-btn" onclick="openAuthModal()">Settings</button>
+        </header>
+
+        <!-- Loading / Empty / Error States -->
+        <div id="loading-state" class="state-container glass active">
+            <h2>Loading...</h2>
+            <p>Connecting to backend...</p>
+        </div>
+
+        <div id="empty-state" class="state-container glass">
+            <h2>No Events Yet 🚀</h2>
+            <p>Your team hasn't logged any errors. Enable telemetry in envfix CLI and run a failing command to see data here!</p>
+        </div>
+
+        <div id="error-state" class="state-container glass" style="border-color: rgba(239, 68, 68, 0.3);">
+            <h2 style="color: var(--danger)">Connection Failed</h2>
+            <p id="error-msg">Could not connect to backend. Is uvicorn running?</p>
+        </div>
+
+        <!-- Dashboard Content -->
+        <div id="dashboard-content">
+            <div class="metrics-grid">
+                <div class="metric-card glass">
+                    <div class="metric-title">Total Errors Diagnosed</div>
+                    <div class="metric-value" id="val-total">0</div>
+                </div>
+                <div class="metric-card glass">
+                    <div class="metric-title">AI Fix Success Rate</div>
+                    <div class="metric-value" id="val-success">0%</div>
+                </div>
+                <div class="metric-card glass">
+                    <div class="metric-title">Most-Used Provider</div>
+                    <div class="metric-value" id="val-provider" style="font-size: 2rem; align-self: flex-start; margin-top: auto;">None</div>
+                </div>
+            </div>
+
+            <div class="chart-section glass">
+                <div class="chart-header">
+                    <h2>Error Type Breakdown</h2>
+                </div>
+                <div class="chart-container">
+                    <canvas id="errorChart"></canvas>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = "http://127.0.0.1:8000";
+        let chartInstance = null;
+
+        // --- Auth Logic ---
+        function openAuthModal() {
+            document.getElementById('auth-modal').classList.add('active');
+            document.getElementById('teamIdInput').value = localStorage.getItem('envfix_team_id') || '1';
+            document.getElementById('apiKeyInput').value = localStorage.getItem('envfix_api_key') || '';
+        }
+
+        function closeAuthModal() {
+            document.getElementById('auth-modal').classList.remove('active');
+        }
+
+        function saveAuthAndLoad() {
+            let teamId = document.getElementById('teamIdInput').value.trim();
+            let apiKey = document.getElementById('apiKeyInput').value.trim();
+            
+            // Strip accidental surrounding quotes if user copied them
+            apiKey = apiKey.replace(/^["']|["']$/g, '');
+            
+            if (!teamId || !apiKey) return;
+            
+            localStorage.setItem('envfix_team_id', teamId);
+            localStorage.setItem('envfix_api_key', apiKey);
+            
+            closeAuthModal();
+            fetchData();
+        }
+
+        function checkAuth() {
+            const teamId = localStorage.getItem('envfix_team_id');
+            const apiKey = localStorage.getItem('envfix_api_key');
+            
+            if (!teamId || !apiKey) {
+                showState('none');
+                openAuthModal();
+                return false;
+            }
+            return true;
+        }
+
+        // --- UI State Management ---
+        function showState(stateName, errorMsg = "") {
+            document.getElementById('loading-state').classList.remove('active');
+            document.getElementById('empty-state').classList.remove('active');
+            document.getElementById('error-state').classList.remove('active');
+            document.getElementById('dashboard-content').classList.remove('active');
+
+            if (stateName === 'dashboard') {
+                document.getElementById('dashboard-content').classList.add('active');
+            } else if (stateName === 'empty') {
+                document.getElementById('empty-state').classList.add('active');
+            } else if (stateName === 'error') {
+                document.getElementById('error-state').classList.add('active');
+                if (errorMsg) document.getElementById('error-msg').innerText = errorMsg;
+            } else if (stateName === 'loading') {
+                document.getElementById('loading-state').classList.add('active');
+            }
+        }
+
+        // --- Data Fetching ---
+        async function fetchData() {
+            if (!checkAuth()) return;
+            
+            showState('loading');
+            
+            const teamId = localStorage.getItem('envfix_team_id');
+            const apiKey = localStorage.getItem('envfix_api_key');
+            
+            try {
+                const res = await fetch(`${API_BASE}/teams/${teamId}/stats`, {
+                    headers: { 'X-API-Key': apiKey }
+                });
+
+                if (res.status === 401 || res.status === 403) {
+                    showState('error', 'Invalid API Key or Team ID. Click Settings to fix your credentials.');
+                    return;
+                }
+                
+                if (!res.ok) throw new Error(`HTTP error ${res.status}`);
+                
+                const data = await res.json();
+                
+                if (data.total_events === 0) {
+                    showState('empty');
+                } else {
+                    updateDashboard(data);
+                    showState('dashboard');
+                }
+            } catch (err) {
+                console.error(err);
+                showState('error', 'Failed to connect to the analytics backend. Is uvicorn running on 127.0.0.1:8000?');
+            }
+        }
+
+        // --- UI Updating ---
+        function updateDashboard(data) {
+            // Animate numbers
+            animateValue('val-total', 0, data.total_events, 800, "");
+            animateValue('val-success', 0, Math.round(data.success_rate), 800, "%");
+            
+            document.getElementById('val-provider').innerText = data.most_used_provider || 'Unknown';
+
+            renderChart(data.error_type_breakdown);
+        }
+
+        function animateValue(id, start, end, duration, suffix) {
+            if (start === end) {
+                document.getElementById(id).innerHTML = end + suffix;
+                return;
+            }
+            const obj = document.getElementById(id);
+            let startTimestamp = null;
+            const step = (timestamp) => {
+                if (!startTimestamp) startTimestamp = timestamp;
+                const progress = Math.min((timestamp - startTimestamp) / duration, 1);
+                // easeOutQuart
+                const ease = 1 - Math.pow(1 - progress, 4);
+                const current = Math.floor(ease * (end - start) + start);
+                obj.innerHTML = current + suffix;
+                if (progress < 1) {
+                    window.requestAnimationFrame(step);
+                }
+            };
+            window.requestAnimationFrame(step);
+        }
+
+        // --- Chart.js ---
+        function renderChart(breakdown) {
+            const ctx = document.getElementById('errorChart').getContext('2d');
+            
+            // Sort data by count descending
+            const sortedEntries = Object.entries(breakdown).sort((a, b) => b[1] - a[1]);
+            const labels = sortedEntries.map(e => e[0]);
+            const values = sortedEntries.map(e => e[1]);
+
+            if (chartInstance) {
+                chartInstance.destroy();
+            }
+
+            Chart.defaults.color = '#94a3b8';
+            Chart.defaults.font.family = "'Inter', sans-serif";
+
+            chartInstance = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: 'Occurrences',
+                        data: values,
+                        backgroundColor: 'rgba(59, 130, 246, 0.5)',
+                        borderColor: 'rgba(59, 130, 246, 1)',
+                        borderWidth: 1,
+                        borderRadius: 4,
+                        hoverBackgroundColor: 'rgba(59, 130, 246, 0.8)',
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    indexAxis: 'y', // horizontal bar chart
+                    plugins: {
+                        legend: { display: false },
+                        tooltip: {
+                            backgroundColor: 'rgba(15, 23, 42, 0.9)',
+                            titleFont: { size: 14, family: "'Inter', sans-serif" },
+                            bodyFont: { size: 13, family: "'Inter', sans-serif" },
+                            padding: 12,
+                            cornerRadius: 8,
+                            displayColors: false
+                        }
+                    },
+                    scales: {
+                        x: {
+                            grid: {
+                                color: 'rgba(255, 255, 255, 0.05)',
+                                drawBorder: false
+                            },
+                            ticks: { precision: 0 } // whole numbers only
+                        },
+                        y: {
+                            grid: { display: false },
+                            ticks: {
+                                font: { size: 13 }
+                            }
+                        }
+                    },
+                    animation: {
+                        duration: 1200,
+                        easing: 'easeOutQuart'
+                    }
+                }
+            });
+        }
+
+        // --- Init ---
+        document.addEventListener('DOMContentLoaded', () => {
+            fetchData();
+        });
+    </script>
+</body>
+</html>
