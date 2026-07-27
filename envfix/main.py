@@ -487,6 +487,11 @@ def diagnose_cmd(
         "--no-cache",
         help="Bypass the local cache and force a new AI diagnosis.",
     ),
+    output_file: Optional[str] = typer.Option(
+        None,
+        "--output-file",
+        help="Write the CI markdown output to a file instead of stdout.",
+    ),
 ) -> None:
     """
     Read an error log file and output a diagnosis and suggested fix.
@@ -561,7 +566,11 @@ def diagnose_cmd(
 ```bash
 {fix_text}
 ```"""
-        print(markdown_output)
+        if output_file:
+            with open(output_file, "w", encoding="utf-8") as out_f:
+                out_f.write(markdown_output)
+        else:
+            print(markdown_output)
     else:
         _show_fix_panel(diagnosis_text, fix_text, "cache" if cache_hit else provider, cache_hit.score if cache_hit else None)
     raise typer.Exit(code=0)
