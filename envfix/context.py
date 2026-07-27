@@ -6,6 +6,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
+from envfix.redact import redact_secrets
+
 # Lines to include above and below the failing line
 CONTEXT_WINDOW = 10
 
@@ -110,6 +112,7 @@ def _read_safe(filepath: str, lineno: int, root: Path) -> Optional[CodeContext]:
             f"{start + i:4d} | {line}"
             for i, line in enumerate(lines[start - 1 : end])
         )
+        snippet = redact_secrets(snippet)
 
         return CodeContext(
             filepath=str(resolved.relative_to(root)),

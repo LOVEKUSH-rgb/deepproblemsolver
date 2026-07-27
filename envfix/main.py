@@ -18,6 +18,7 @@ from envfix.config import load_config, save_config, reset_config
 from envfix.context import extract_context, trim_stack_trace
 from envfix.logger import LOG_FILE, get_history, get_log_file, log_attempt
 from envfix.telemetry import send_telemetry
+from envfix.redact import redact_secrets
 from envfix.preview import get_fix_preview, is_destructive
 from envfix.runner import run_command
 from envfix.dependencies import (
@@ -216,7 +217,7 @@ def run(
         return
 
     # ── Step 2: Command failed — show the error ───────────────────────────
-    error_text = stderr.strip() or stdout.strip() or "(no output captured)"
+    error_text = redact_secrets(stderr.strip() or stdout.strip() or "(no output captured)")
     console.print(
         Panel(
             error_text,
@@ -293,7 +294,7 @@ def run(
                 Panel(result.raw_response, border_style="yellow", expand=False)
             )
             log_attempt(
-                original_command=cmd,
+                original_command=redact_secrets(cmd),
                 error_text=error_text,
                 diagnosis=result.diagnosis,
                 fix_command=result.fix,
@@ -331,7 +332,7 @@ def run(
     if not approved:
         console.print("[dim]Exiting without changes.[/dim]")
         log_attempt(
-            original_command=cmd,
+            original_command=redact_secrets(cmd),
             error_text=error_text,
             diagnosis=diagnosis,
             fix_command=fix,
@@ -371,7 +372,7 @@ def run(
             f"(exit code {fix_rc}). Aborting retry.[/bold red]"
         )
         log_attempt(
-            original_command=cmd,
+            original_command=redact_secrets(cmd),
             error_text=error_text,
             diagnosis=diagnosis,
             fix_command=fix,
@@ -442,7 +443,7 @@ def run(
 
     # ── Step 8: Log everything ────────────────────────────────────────────
     log_attempt(
-        original_command=cmd,
+        original_command=redact_secrets(cmd),
         error_text=error_text,
         diagnosis=diagnosis,
         fix_command=fix,
@@ -503,7 +504,7 @@ def diagnose_cmd(
         raise typer.Exit(code=1)
 
     with open(log_file, "r", encoding="utf-8", errors="replace") as f:
-        error_text = f.read().strip()
+        error_text = redact_secrets(f.read().strip())
         
     if not error_text:
         console.print("[bold red]Error:[/bold red] Log file is empty.")

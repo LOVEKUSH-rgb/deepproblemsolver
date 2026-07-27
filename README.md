@@ -292,6 +292,23 @@ If the network request fails, `envfix` will silently swallow the error to guaran
 
 ---
 
+## Security & Data Redaction
+
+Before any error text, stack trace, or code snippet is logged locally or sent to an AI provider (Ollama, Groq, Gemini), `envfix` runs it through a **best-effort Secret Redaction Layer**. 
+
+This layer aggressively searches for and redacts:
+- **AWS Access Keys**
+- **JWT Tokens**
+- **Database Connection URLs** (the password segment is masked)
+- **Private Key Blocks** (e.g. RSA / ECDSA keys)
+- **Generic Secrets** (strings > 20 characters assigned to variables named API_KEY, SECRET, TOKEN, PASSWORD, etc.)
+
+Any detected secrets are replaced with placeholders like `[REDACTED:AWS_KEY]`.
+
+> **Note:** This is purely pattern-based matching and is **not a guarantee**. You should always avoid committing secrets to code or printing them in logs in the first place.
+
+---
+
 ## Known limitations
 
 - **Model quality varies.** `envfix` is only as good as the local model you
