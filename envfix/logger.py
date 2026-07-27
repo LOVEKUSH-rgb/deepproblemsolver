@@ -8,6 +8,7 @@ from datetime import datetime, timezone
 from typing import Any, Optional
 
 from envfix.embeddings import get_embedding
+from envfix.telemetry import send_telemetry
 
 
 def get_log_file() -> str:
@@ -96,6 +97,24 @@ def log_attempt(
     log_data = _load_log(get_log_file())
     log_data.append(record)
     _save_log(log_data, get_log_file())
+    
+    # Try to deduce error type
+    error_lines = [line.strip() for line in error_text.splitlines() if line.strip()]
+    error_type = "Unknown"
+    if error_lines:
+        last_line = error_lines[-1]
+        if ":" in last_line:
+            error_type = last_line.split(":")[0].split(" ")[-1]
+        else:
+            error_type = last_line[:50]
+
+    send_telemetry(
+        error_type=error_type,
+        provider_used=provider or "unknown",
+        was_cache_hit=(source == "cache"),
+        fix_applied=user_approved,
+        fix_worked=fix_worked
+    )
 
 
 def get_history(log_file: str = LOG_FILE) -> list[dict[str, Any]]:

@@ -17,6 +17,7 @@ from envfix.cache import find_cached_fix
 from envfix.config import load_config, save_config, reset_config
 from envfix.context import extract_context, trim_stack_trace
 from envfix.logger import LOG_FILE, get_history, get_log_file, log_attempt
+from envfix.telemetry import send_telemetry
 from envfix.preview import get_fix_preview, is_destructive
 from envfix.runner import run_command
 from envfix.dependencies import (
@@ -573,6 +574,25 @@ def diagnose_cmd(
             print(markdown_output)
     else:
         _show_fix_panel(diagnosis_text, fix_text, "cache" if cache_hit else provider, cache_hit.score if cache_hit else None)
+
+    # In diagnose_cmd, we don't know if the fix worked because we don't apply it.
+    error_lines = [line.strip() for line in error_text.splitlines() if line.strip()]
+    error_type = "Unknown"
+    if error_lines:
+        last_line = error_lines[-1]
+        if ":" in last_line:
+            error_type = last_line.split(":")[0].split(" ")[-1]
+        else:
+            error_type = last_line[:50]
+
+    send_telemetry(
+        error_type=error_type,
+        provider_used=provider or "unknown",
+        was_cache_hit=(cache_hit is not None),
+        fix_applied=False,
+        fix_worked=None
+    )
+
     raise typer.Exit(code=0)
 
 

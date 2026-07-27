@@ -268,6 +268,30 @@ Sample entry:
 
 ---
 
+## Opt-In Team Telemetry
+
+`envfix` supports sending optional, anonymous telemetry to a centralized team dashboard (if configured) so that engineering leads can view aggregated metrics like the most frequent errors and overall AI success rate. 
+
+**By default, telemetry is OFF.** `envfix` runs fully offline and does not send any data to any external server. 
+
+To enable telemetry, provide your team's API key and backend URL using environment variables:
+```bash
+export ENVFIX_TEAM_API_KEY="your-team-api-key"
+export ENVFIX_BACKEND_URL="http://your-backend-domain.com"
+```
+Alternatively, these can be set in the `~/.envfix/config.toml` file (`team_api_key` and `backend_url`).
+
+If configured, `envfix` will send a non-blocking background request to the backend with the following minimal usage statistics:
+- `error_type`: A short summary of the error (e.g. `ZeroDivisionError`). No private code or logs are sent.
+- `provider_used`: The AI provider queried (e.g. `groq`, `ollama`).
+- `was_cache_hit`: `true` if the local cache handled the fix without a model call.
+- `fix_applied`: `true` if the user approved running the fix.
+- `fix_worked`: `true` if the retry was successful.
+
+If the network request fails, `envfix` will silently swallow the error to guarantee zero interruptions to your workflow.
+
+---
+
 ## Known limitations
 
 - **Model quality varies.** `envfix` is only as good as the local model you
