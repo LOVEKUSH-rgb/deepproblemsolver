@@ -40,10 +40,11 @@ def send_telemetry(error_type: str, provider_used: str, was_cache_hit: bool, fix
     def _post():
         try:
             import httpx
-            with httpx.Client(timeout=3.0) as client:
+            with httpx.Client(timeout=1.0) as client:
                 client.post(url, json=payload, headers=headers)
         except Exception:
             pass # Fail silently
 
-    # Run in a background thread to not block the user
-    threading.Thread(target=_post, daemon=True).start()
+    # Run in a background thread to not block the user, but daemon=False 
+    # so the main thread waits up to 1 second for the HTTP call to finish
+    threading.Thread(target=_post, daemon=False).start()
