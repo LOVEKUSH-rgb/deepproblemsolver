@@ -1,0 +1,26 @@
+name: Test envfix action
+on:
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write # Important for commenting on PRs!
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run a failing script
+        id: tests
+        run: python dummy_fail.py > test_output.log 2>&1
+        continue-on-error: true
+
+      - name: Diagnose failure with envfix
+        if: steps.tests.outcome == 'failure'
+        uses: ./.github/actions/envfix-action
+        with:
+          log-file: test_output.log
+          provider: groq
+          api-key: ${{ secrets.GROQ_API_KEY }}
