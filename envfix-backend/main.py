@@ -38,12 +38,37 @@ def create_team(team: schemas.TeamCreate, db: Session = Depends(get_db)):
     """
     new_team = models.Team(
         name=team.name,
+        avg_manual_fix_minutes=team.avg_manual_fix_minutes,
+        hourly_rate=team.hourly_rate,
         api_key=str(uuid.uuid4())
     )
     db.add(new_team)
     db.commit()
     db.refresh(new_team)
+    db.refresh(new_team)
     return new_team
+
+@app.patch("/teams/{team_id}", response_model=schemas.TeamResponse)
+def update_team(
+    team_id: int,
+    team_update: schemas.TeamUpdate,
+    db: Session = Depends(get_db),
+    team: models.Team = Depends(get_team_by_api_key)
+):
+    """
+    Update team settings.
+    """
+    if team.id != team_id:
+        raise HTTPException(status_code=403, detail="Not authorized to update this team")
+        
+    if team_update.avg_manual_fix_minutes is not None:
+        team.avg_manual_fix_minutes = team_update.avg_manual_fix_minutes
+    if team_update.hourly_rate is not None:
+        team.hourly_rate = team_update.hourly_rate
+        
+    db.commit()
+    db.refresh(team)
+    return team
 
 @app.post("/events", response_model=schemas.EventResponse)
 def create_event(
@@ -54,6 +79,11 @@ def create_event(
     """
     Log a new envfix usage event.
     """
+    if team.plan == "trial":
+        event_count = db.query(models.Event).filter(models.Event.team_id == team.id).count()
+        if event_count >= team.trial_events_limit:
+            raise HTTPException(status_code=403, detail="Trial limit reached — contact the developer to continue.")
+
     new_event = models.Event(
         team_id=team.id,
         error_type=event.error_type,
@@ -82,17 +112,38 @@ def get_team_stats(
     # Total events
     total_events = db.query(models.Event).filter(models.Event.team_id == team_id).count()
 
-    # Success rate
-    applied_events = db.query(models.Event).filter(
+    # Accuracy & Success Rate
+    attempted_events = db.query(models.Event).filter(
         models.Event.team_id == team_id,
-        models.Event.fix_applied == True,
-        models.Event.fix_worked != None
+        models.Event.fix_applied == True
     ).all()
     
-    success_rate = 0.0
-    if applied_events:
-        worked_count = sum(1 for e in applied_events if e.fix_worked)
-        success_rate = (worked_count / len(applied_events)) * 100
+    total_fixes_attempted = len(attempted_events)
+    total_fixes_successful = sum(1 for e in attempted_events if e.fix_worked == True)
+    total_fixes_failed = sum(1 for e in attempted_events if e.fix_worked == False)
+
+    success_rate = None
+    if total_fixes_attempted > 0:
+        success_rate = (total_fixes_successful / total_fixes_attempted) * 100
+
+    # Recent Failures
+    recent_failure_events = db.query(models.Event).filter(
+        models.Event.team_id == team_id,
+        models.Event.fix_worked == False
+    ).order_by(desc(models.Event.created_at)).limit(10).all()
+    
+    recent_failures = [e.error_type for e in recent_failure_events]
+
+    # Savings Calculation
+    resolved_events_count = db.query(models.Event).filter(
+        models.Event.team_id == team_id,
+        models.Event.fix_applied == True,
+        models.Event.fix_worked == True,
+        models.Event.was_cache_hit == False
+    ).count()
+
+    estimated_hours_saved = (resolved_events_count * team.avg_manual_fix_minutes) / 60.0
+    estimated_dollars_saved = estimated_hours_saved * team.hourly_rate
 
     # Most used provider
     provider_counts = db.query(
@@ -115,7 +166,18 @@ def get_team_stats(
 
     return schemas.TeamStats(
         total_events=total_events,
+        plan=team.plan,
+        trial_events_limit=team.trial_events_limit,
         success_rate=success_rate,
+        total_fixes_attempted=total_fixes_attempted,
+        total_fixes_successful=total_fixes_successful,
+        total_fixes_failed=total_fixes_failed,
+        recent_failures=recent_failures,
+        total_resolved_errors=resolved_events_count,
+        estimated_hours_saved=estimated_hours_saved,
+        estimated_dollars_saved=estimated_dollars_saved,
+        avg_manual_fix_minutes=team.avg_manual_fix_minutes,
+        hourly_rate=team.hourly_rate,
         most_used_provider=most_used_provider,
         error_type_breakdown=error_type_breakdown
     )

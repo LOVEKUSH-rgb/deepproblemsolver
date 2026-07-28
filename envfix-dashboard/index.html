@@ -113,6 +113,37 @@
             background: rgba(255, 255, 255, 0.05);
         }
 
+        /* Trial Badge */
+        .header-actions {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+        }
+
+        .trial-badge {
+            display: none;
+            background: rgba(239, 68, 68, 0.1);
+            border: 1px solid rgba(239, 68, 68, 0.3);
+            color: #fca5a5;
+            padding: 0.5rem 1rem;
+            border-radius: 8px;
+            font-size: 0.85rem;
+            font-weight: 600;
+            letter-spacing: 0.5px;
+            text-transform: uppercase;
+        }
+
+        .trial-badge.active {
+            display: block;
+            animation: fadeIn 0.4s ease;
+        }
+
+        .trial-badge.warning {
+            background: rgba(245, 158, 11, 0.1);
+            border-color: rgba(245, 158, 11, 0.3);
+            color: #fcd34d;
+        }
+
         /* Metrics Grid */
         .metrics-grid {
             display: grid;
@@ -138,6 +169,153 @@
             transform: translateY(-5px);
             box-shadow: 0 12px 40px 0 rgba(0, 0, 0, 0.3);
             border-color: rgba(255,255,255,0.15);
+        }
+
+        /* Savings Section */
+        .savings-section {
+            margin-bottom: 2rem;
+            animation: fadeInUp 0.6s ease-out backwards;
+            text-align: center;
+            padding: 2.5rem;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .savings-section::before {
+            content: '';
+            position: absolute;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: var(--accent-gradient);
+            opacity: 0.1;
+            z-index: -1;
+        }
+
+        .savings-grid {
+            display: flex;
+            justify-content: center;
+            gap: 4rem;
+            margin-bottom: 1.5rem;
+            flex-wrap: wrap;
+        }
+
+        .savings-metric {
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+        }
+
+        .savings-metric h3 {
+            font-size: 1.1rem;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            font-weight: 600;
+        }
+
+        .savings-metric p {
+            font-size: 4.5rem;
+            font-weight: 800;
+            background: var(--accent-gradient);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            line-height: 1;
+        }
+
+        .savings-caption {
+            font-size: 0.85rem;
+            color: var(--text-muted);
+            opacity: 0.8;
+            max-width: 600px;
+            margin: 0 auto;
+            line-height: 1.5;
+        }
+
+        /* Accuracy Section */
+        .accuracy-section {
+            margin-bottom: 2rem;
+            animation: fadeInUp 0.6s ease-out backwards;
+            animation-delay: 0.1s;
+            padding: 2.5rem;
+            text-align: center;
+        }
+
+        .accuracy-header {
+            margin-bottom: 1.5rem;
+        }
+
+        .accuracy-rate {
+            font-size: 4.5rem;
+            font-weight: 800;
+            background: linear-gradient(135deg, #10b981, #3b82f6);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            line-height: 1;
+            margin-bottom: 0.5rem;
+        }
+        
+        .accuracy-rate.failed-heavy {
+            background: linear-gradient(135deg, #ef4444, #f59e0b);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .accuracy-details {
+            font-size: 1.1rem;
+            color: var(--text-muted);
+            margin-bottom: 2rem;
+        }
+
+        .accuracy-details span.success-text {
+            color: var(--success);
+            font-weight: 600;
+        }
+
+        .accuracy-details span.fail-text {
+            color: var(--danger);
+            font-weight: 600;
+        }
+
+        /* Recent Failures List */
+        .failures-list-container {
+            text-align: left;
+            background: rgba(0,0,0,0.2);
+            border-radius: 12px;
+            padding: 1.5rem;
+            border: 1px solid var(--card-border);
+        }
+
+        .failures-list-container h3 {
+            font-size: 1rem;
+            color: var(--danger);
+            margin-bottom: 1rem;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .failures-list {
+            list-style: none;
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+        }
+
+        .failures-list li {
+            padding: 0.75rem 1rem;
+            background: rgba(239, 68, 68, 0.05);
+            border-left: 3px solid var(--danger);
+            border-radius: 4px;
+            font-family: monospace;
+            font-size: 0.9rem;
+            color: #f8fafc;
+        }
+
+        .no-failures {
+            color: var(--text-muted);
+            font-style: italic;
+            font-size: 0.9rem;
         }
 
         .metric-title {
@@ -335,7 +513,10 @@
             <div class="logo">
                 <h1>envfix Analytics</h1>
             </div>
-            <button class="settings-btn" onclick="openAuthModal()">Settings</button>
+            <div class="header-actions">
+                <div id="trial-badge" class="trial-badge">Trial: <span id="val-trial-used">0</span>/<span id="val-trial-limit">100</span> events used</div>
+                <button class="settings-btn" onclick="openAuthModal()">Settings</button>
+            </div>
         </header>
 
         <!-- Loading / Empty / Error States -->
@@ -356,14 +537,42 @@
 
         <!-- Dashboard Content -->
         <div id="dashboard-content">
+            <div class="savings-section glass">
+                <div class="savings-grid">
+                    <div class="savings-metric">
+                        <h3>Estimated Dollars Saved</h3>
+                        <p id="val-dollars">$0</p>
+                    </div>
+                    <div class="savings-metric">
+                        <h3>Estimated Hours Saved</h3>
+                        <p id="val-hours">0</p>
+                    </div>
+                </div>
+                <p class="savings-caption">
+                    Based on an estimated <span id="tooltip-minutes">18</span> min per manual fix at $<span id="tooltip-rate">75</span>/hr — adjust these in team settings to match your team.
+                </p>
+            </div>
+
+            <div class="accuracy-section glass">
+                <div class="accuracy-header">
+                    <div class="accuracy-rate" id="val-accuracy">0%</div>
+                    <div class="accuracy-details">
+                        Fix success rate (<span class="success-text" id="val-successful">0</span> successful, <span class="fail-text" id="val-failed">0</span> failed out of <span id="val-attempted">0</span> attempts)
+                    </div>
+                </div>
+                
+                <div class="failures-list-container">
+                    <h3>⚠️ Recent Failed Fixes</h3>
+                    <ul class="failures-list" id="failures-list">
+                        <!-- Populated by JS -->
+                    </ul>
+                </div>
+            </div>
+
             <div class="metrics-grid">
                 <div class="metric-card glass">
                     <div class="metric-title">Total Errors Diagnosed</div>
                     <div class="metric-value" id="val-total">0</div>
-                </div>
-                <div class="metric-card glass">
-                    <div class="metric-title">AI Fix Success Rate</div>
-                    <div class="metric-value" id="val-success">0%</div>
                 </div>
                 <div class="metric-card glass">
                     <div class="metric-title">Most-Used Provider</div>
@@ -481,18 +690,83 @@
 
         // --- UI Updating ---
         function updateDashboard(data) {
+            // Animate savings
+            animateValue('val-dollars', 0, Math.round(data.estimated_dollars_saved), 1000, "", "$");
+            animateValue('val-hours', 0, Math.round(data.estimated_hours_saved), 1000, "");
+
+            // Update tooltip text
+            document.getElementById('tooltip-minutes').innerText = data.avg_manual_fix_minutes;
+            document.getElementById('tooltip-rate').innerText = data.hourly_rate;
+
+            // Update Trial Badge
+            const trialBadge = document.getElementById('trial-badge');
+            if (data.plan === 'trial') {
+                trialBadge.classList.add('active');
+                document.getElementById('val-trial-used').innerText = data.total_events;
+                document.getElementById('val-trial-limit').innerText = data.trial_events_limit;
+                
+                if (data.total_events >= data.trial_events_limit) {
+                    trialBadge.classList.remove('warning');
+                    // Uses default red styling
+                } else if (data.total_events >= data.trial_events_limit * 0.8) {
+                    trialBadge.classList.add('warning');
+                } else {
+                    trialBadge.classList.remove('warning');
+                    trialBadge.style.color = 'var(--text-muted)';
+                    trialBadge.style.borderColor = 'var(--card-border)';
+                    trialBadge.style.background = 'transparent';
+                }
+            } else {
+                trialBadge.classList.remove('active');
+            }
+
+            // Accuracy Data
+            const accRate = data.success_rate !== null ? Math.round(data.success_rate) : 0;
+            animateValue('val-accuracy', 0, accRate, 800, "%");
+            
+            const accEl = document.getElementById('val-accuracy');
+            if (accRate < 50 && data.total_fixes_attempted > 0) {
+                accEl.classList.add('failed-heavy');
+            } else {
+                accEl.classList.remove('failed-heavy');
+            }
+            
+            // If success_rate is null due to 0 attempts, show N/A
+            if (data.success_rate === null) {
+                accEl.innerHTML = "N/A";
+            }
+
+            animateValue('val-successful', 0, data.total_fixes_successful, 800, "");
+            animateValue('val-failed', 0, data.total_fixes_failed, 800, "");
+            animateValue('val-attempted', 0, data.total_fixes_attempted, 800, "");
+
+            // Recent failures list
+            const failsList = document.getElementById('failures-list');
+            failsList.innerHTML = '';
+            if (data.recent_failures && data.recent_failures.length > 0) {
+                data.recent_failures.forEach(err => {
+                    const li = document.createElement('li');
+                    li.textContent = err;
+                    failsList.appendChild(li);
+                });
+            } else {
+                const li = document.createElement('li');
+                li.className = 'no-failures';
+                li.textContent = 'No recent failed fixes recorded. Great job!';
+                failsList.appendChild(li);
+            }
+
             // Animate numbers
             animateValue('val-total', 0, data.total_events, 800, "");
-            animateValue('val-success', 0, Math.round(data.success_rate), 800, "%");
             
             document.getElementById('val-provider').innerText = data.most_used_provider || 'Unknown';
 
             renderChart(data.error_type_breakdown);
         }
 
-        function animateValue(id, start, end, duration, suffix) {
+        function animateValue(id, start, end, duration, suffix = "", prefix = "") {
             if (start === end) {
-                document.getElementById(id).innerHTML = end + suffix;
+                document.getElementById(id).innerHTML = prefix + end + suffix;
                 return;
             }
             const obj = document.getElementById(id);
@@ -503,7 +777,7 @@
                 // easeOutQuart
                 const ease = 1 - Math.pow(1 - progress, 4);
                 const current = Math.floor(ease * (end - start) + start);
-                obj.innerHTML = current + suffix;
+                obj.innerHTML = prefix + current + suffix;
                 if (progress < 1) {
                     window.requestAnimationFrame(step);
                 }

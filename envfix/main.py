@@ -99,6 +99,7 @@ def _show_fix_panel(
 def config_cmd(
     show: bool = typer.Option(False, "--show", help="Show current configuration."),
     reset: bool = typer.Option(False, "--reset", help="Reset configuration to defaults."),
+    local_only: Optional[str] = typer.Option(None, "--local-only", help="Enable or disable strict local-only mode (true/false)."),
 ) -> None:
     """Manage envfix global configuration interactively."""
     if reset:
@@ -122,6 +123,15 @@ def config_cmd(
         console.print(table)
         return
 
+    if local_only is not None:
+        local_only_val = local_only.strip().lower() == "true"
+        config_data = load_config()
+        config_data["local_only"] = local_only_val
+        save_config(config_data)
+        mode = "ENABLED" if local_only_val else "DISABLED"
+        console.print(f"\n[bold green]Local-only mode {mode}.[/bold green]")
+        return
+
     console.print("[bold cyan]envfix Configuration Setup[/bold cyan]\n")
     
     while True:
@@ -139,9 +149,24 @@ def config_cmd(
     save_config({
         "default_provider": provider,
         "default_category": category,
+        "local_only": load_config().get("local_only", False)
     })
     
     console.print("\n[bold green]Configuration saved successfully![/bold green]")
+
+
+@app.command("doctor")
+def doctor_cmd() -> None:
+    """Report the current operating mode and system configuration."""
+    config = load_config()
+    is_local = str(config.get("local_only", "")).lower() == "true" or config.get("local_only") is True
+    
+    console.print("\n[bold cyan]envfix Doctor[/bold cyan]\n")
+    
+    if is_local:
+        console.print("[bold green]Local-only mode: ENABLED — no data leaves this machine except to your local Ollama instance.[/bold green]")
+    else:
+        console.print("[bold yellow]Local-only mode: DISABLED — cloud telemetry or cloud AI providers may be used if configured.[/bold yellow]")
 
 
 @app.command(
@@ -204,6 +229,11 @@ def run(
         category = config.get("default_category", "general")
     if not model:
         model = config.get("default_model", "llama3.1:8b")
+
+    is_local = str(config.get("local_only", "")).lower() == "true" or config.get("local_only") is True
+    if is_local and provider.lower() in ["groq", "gemini"]:
+        console.print("[bold red]Error:[/bold red] Local-only mode is enabled; cloud providers are disabled. Disable local-only mode to use cloud providers.")
+        raise typer.Exit(code=1)
 
     # ── Step 1: Run the original command ─────────────────────────────────
     console.print(f"\n[bold cyan]▶ Running:[/bold cyan] {cmd}\n")
@@ -517,6 +547,14 @@ def diagnose_cmd(
         category = config.get("default_category", "general")
     if not model:
         model = config.get("default_model", "llama3.1:8b")
+
+    is_local = str(config.get("local_only", "")).lower() == "true" or config.get("local_only") is True
+    if is_local and provider.lower() in ["groq", "gemini"]:
+        if ci:
+            print("**envfix encountered an error:** Local-only mode is enabled; cloud providers are disabled.")
+        else:
+            console.print("[bold red]Error:[/bold red] Local-only mode is enabled; cloud providers are disabled. Disable local-only mode to use cloud providers.")
+        raise typer.Exit(code=1)
 
     code_context = extract_context(error_text)
     

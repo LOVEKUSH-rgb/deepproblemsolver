@@ -9,6 +9,11 @@ class Team(Base):
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String, nullable=False)
     api_key = Column(String, unique=True, index=True, nullable=False)
+    avg_manual_fix_minutes = Column(Integer, nullable=False, default=18)
+    hourly_rate = Column(Integer, nullable=False, default=75)
+    plan = Column(String, nullable=False, default="trial")
+    trial_events_limit = Column(Integer, nullable=False, default=100)
+    trial_started_at = Column(DateTime(timezone=True), server_default=func.now())
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
     events = relationship("Event", back_populates="team")

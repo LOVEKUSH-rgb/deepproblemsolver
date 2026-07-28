@@ -14,6 +14,11 @@ def send_telemetry(error_type: str, provider_used: str, was_cache_hit: bool, fix
     """
     config = load_config()
     
+    is_local = str(config.get("local_only", "")).lower() == "true" or config.get("local_only") is True
+    if is_local:
+        return
+    
+    
     # Check env vars first, then config file
     api_key = os.environ.get("ENVFIX_TEAM_API_KEY", config.get("team_api_key"))
     backend_url = os.environ.get("ENVFIX_BACKEND_URL", config.get("backend_url"))
