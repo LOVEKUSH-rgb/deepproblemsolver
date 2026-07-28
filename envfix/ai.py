@@ -24,6 +24,7 @@ PROMPT_TEMPLATE = (
     "- If it's a Python pip error, use 'python -m pip install ...' instead of 'pip install ...'\n"
     "- NO backticks, NO markdown formatting, NO surrounding quotes around the command\n"
     "- Give a single runnable shell command only\n"
+    "- If the error is a pure code logic error (e.g. ZeroDivisionError) and cannot be fixed with a shell command, output EXACTLY this for the FIX line: None (Code change required)\n"
     "Example correct format:\n"
     "DIAGNOSIS: The torch package is not installed.\n"
     "FIX: python -m pip install torch"
@@ -47,8 +48,9 @@ PROMPT_TEMPLATE_WITH_CONTEXT = (
     "- If it's a Python pip error, use 'python -m pip install ...' instead of 'pip install ...'\n"
     "- NO backticks, NO markdown formatting, NO surrounding quotes around the command\n"
     "- Give a single runnable shell command only\n"
+    "- If the error is a pure code logic error and cannot be fixed with a shell command, output EXACTLY this for the FIX line: None (Code change required)\n"
     "Example correct format:\n"
-    "DIAGNOSIS: Line 42 calls `train()` before the model is loaded.\n"
+    "DIAGNOSIS: The torch package is not installed.\n"
     "FIX: python -m pip install torch"
 )
 

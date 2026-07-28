@@ -342,6 +342,24 @@ def run(
         _show_fix_panel(diagnosis, fix, source)
 
     # ── Step 4b: Dry-run preview ──────────────────────────────────────────
+    if fix.strip() == "None (Code change required)":
+        console.print("\n[bold yellow]⚠ This appears to be a logic error in your code, not an environment issue.[/bold yellow]")
+        console.print("[dim]envfix only applies shell command fixes. Please manually edit the code as per the diagnosis.[/dim]")
+        
+        log_attempt(
+            original_command=redact_secrets(cmd),
+            error_text=error_text,
+            diagnosis=diagnosis,
+            fix_command=fix,
+            user_approved=False,
+            fix_worked=None,
+            source=source,
+            category=category,
+            context_included=code_context is not None,
+            provider=provider,
+        )
+        raise typer.Exit(code=1)
+
     preview = get_fix_preview(fix)
     if preview:
         console.print(
@@ -598,8 +616,14 @@ def diagnose_cmd(
         error_lines = [line.strip() for line in error_text.splitlines() if line.strip()]
         short_error = error_lines[-1][:200] if error_lines else "Unknown Error"
         
-        # Output pure Markdown to standard out for CI capture
-        markdown_output = f"""## 🔧 envfix diagnosis{source_tag}
+        if fix_text.strip() == "None (Code change required)":
+            markdown_output = f"""## 🔧 envfix diagnosis{source_tag}
+**Error detected:** {short_error}
+**Diagnosis:** {diagnosis_text}
+
+⚠️ *This appears to be a logic error in your code. Please manually edit the code as per the diagnosis.*"""
+        else:
+            markdown_output = f"""## 🔧 envfix diagnosis{source_tag}
 **Error detected:** {short_error}
 **Diagnosis:** {diagnosis_text}
 **Suggested fix:**
