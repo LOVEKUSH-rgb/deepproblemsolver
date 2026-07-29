@@ -386,7 +386,7 @@ def run(
         raise typer.Exit(code=1)
 
     # ── Step 1: Run the original command ─────────────────────────────────
-    console.print(f"\n[bold cyan]▶ Running:[/bold cyan] {cmd}\n")
+    console.print(f"\n[bold cyan]> Running:[/bold cyan] {cmd}\n")
     stdout, stderr, returncode = run_command(cmd)
 
     if stdout:
@@ -401,7 +401,7 @@ def run(
     console.print(
         Panel(
             error_text,
-            title="[bold red]✗ Command Failed[/bold red]",
+            title="[bold red][X] Command Failed[/bold red]",
             border_style="red",
             expand=False,
         )
@@ -447,7 +447,7 @@ def run(
         provider_name = provider.capitalize()
         display_model = get_actual_model(model, provider)
         console.print(
-            f"\n[bold yellow]🤖 Asking {provider_name} ({display_model}) for a diagnosis…[/bold yellow]"
+            f"\n[bold yellow][AI] Asking {provider_name} ({display_model}) for a diagnosis...[/bold yellow]"
         )
         try:
             trimmed_error = trim_stack_trace(
@@ -566,7 +566,7 @@ def run(
 
     if fix_rc != 0:
         console.print(
-            "[bold red]✗ Fix command itself failed "
+            "[bold red][X] Fix command itself failed "
             f"(exit code {fix_rc}). Aborting retry.[/bold red]"
         )
         log_attempt(
@@ -628,7 +628,7 @@ def run(
                 console.print(hook_stderr, end="")
     else:
         console.print(
-            "\n[bold red]✗ Original command still failed after the fix "
+            "\n[bold red][X] Original command still failed after the fix "
             f"(exit code {retry_rc}). "
             "You may need to try a different approach.[/bold red]"
         )
@@ -866,9 +866,9 @@ def history(
         approved_str = "[green]y[/green]" if approved_val else "[red]n[/red]"
 
         if worked_val is True:
-            worked_str = "[green]✓ yes[/green]"
+            worked_str = "[green][OK] yes[/green]"
         elif worked_val is False:
-            worked_str = "[red]✗ no[/red]"
+            worked_str = "[red][X] no[/red]"
         else:
             worked_str = "[dim]—[/dim]"
 

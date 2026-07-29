@@ -240,6 +240,35 @@ envfix run <cmd>
 
 ---
 
+### Supported Ecosystems
+
+`envfix` automatically detects and diagnoses errors in:
+- **Python**: pip, pytest, python scripts
+- **Node.js**: npm, yarn, node scripts
+- **Rust (Cargo)**: rustc compilation, missing crates
+- **Go**: go modules, compiler errors
+- **Java**: Maven, Gradle, JVM stack traces
+- **Docker**: Dockerfile build steps
+- **General CLI**: bash, powershell, missing binaries, permission issues
+
+When you run `envfix`, it isolates code snippets from the stack trace and feeds them into the local model for a targeted diagnosis.
+
+```bash
+# Python
+envfix run "pytest tests/" --category python
+
+# Rust
+envfix run "cargo build" --category rust
+
+# Go
+envfix run "go run main.go" --category go
+
+# Docker
+envfix run "docker build -t my-app ." --category docker
+```
+
+---
+
 ## Per-user history
 
 Every attempt is logged to `envfix_log_<username>.json` in the directory where

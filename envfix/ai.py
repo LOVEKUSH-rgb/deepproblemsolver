@@ -13,7 +13,8 @@ from envfix.providers import get_provider
 PROMPT_TEMPLATE = (
     "You are diagnosing a development environment error on a Windows machine. "
     "The user has specified this error is related to the '{category}' ecosystem "
-    "(it could be Python, Node.js, package managers, build tools, permissions, or general shell errors).\n"
+    "(e.g., python, node, rust, go, java, docker, or general).\n"
+    "This is a {category} error. Tailor your diagnosis and suggested fix command specifically for the {category} ecosystem.\n"
     "Here is the error output:\n{stderr}\n\n"
     "Give a short diagnosis (1-2 sentences) of the root cause, "
     "then give exactly ONE shell command that would likely fix it. "
@@ -34,7 +35,8 @@ PROMPT_TEMPLATE = (
 # Gives the model much richer context than the raw error text alone.
 PROMPT_TEMPLATE_WITH_CONTEXT = (
     "You are diagnosing a development environment error on a Windows machine. "
-    "The user has specified this error is related to the '{category}' ecosystem.\n\n"
+    "The user has specified this error is related to the '{category}' ecosystem.\n"
+    "This is a {category} error. Tailor your diagnosis and suggested fix command specifically for the {category} ecosystem.\n\n"
     "Here is the error output:\n{stderr}\n\n"
     "Here is the relevant code from {filepath}, lines {start}-{end}:\n"
     "```\n{snippet}\n```\n\n"

@@ -21,6 +21,19 @@ _NODE_RE = re.compile(
     r'at\s+(?:[^\s(]+\s+\()?([^()]+?\.(?:js|ts|jsx|tsx|mjs|cjs)):(\d+)'
 )
 
+# Rust: --> src/main.rs:4:5
+_RUST_RE = re.compile(r'-->\s+([^:]+):(\d+):(\d+)')
+
+# Go: main.go:5:2: undefined: fmt
+_GO_RE = re.compile(r'(?m)^\s*([^\s:]+\.go):(\d+):\d+')
+
+# Java: [ERROR] src/main/java/Main.java:[10,5] OR at com.example.Main(Main.java:10)
+_JAVA_RE = re.compile(r'([^:\s]+\.java):\[(\d+),\d+\]')
+_JAVA_RUNTIME_RE = re.compile(r'at\s+[\w\.\$]+\(([^:]+\.java):(\d+)\)')
+
+# Docker: Dockerfile:10 or dockerfile.v0: line 10
+_DOCKER_RE = re.compile(r'(?i)(Dockerfile)[^\n]*?(?::|line)\s*(\d+)')
+
 
 @dataclass
 class CodeContext:
@@ -60,6 +73,23 @@ def extract_context(stderr: str, cwd: Optional[str] = None) -> Optional[CodeCont
     node_hits: list[tuple[str, int]] = [
         (m.group(1), int(m.group(2))) for m in _NODE_RE.finditer(stderr)
     ]
+    rust_hits: list[tuple[str, int]] = [
+        (m.group(1), int(m.group(2))) for m in _RUST_RE.finditer(stderr)
+    ]
+    go_hits: list[tuple[str, int]] = [
+        (m.group(1), int(m.group(2))) for m in _GO_RE.finditer(stderr)
+    ]
+    java_hits: list[tuple[str, int]] = [
+        (m.group(1), int(m.group(2))) for m in _JAVA_RE.finditer(stderr)
+    ] + [
+        (m.group(1), int(m.group(2))) for m in _JAVA_RUNTIME_RE.finditer(stderr)
+    ]
+    docker_hits: list[tuple[str, int]] = [
+        (m.group(1), int(m.group(2))) for m in _DOCKER_RE.finditer(stderr)
+    ]
+
+    # Combine all non-Python hits in order of preference (first match typically best)
+    other_hits = node_hits + rust_hits + go_hits + java_hits + docker_hits
 
     # Python: try last in-project file first (closest to the actual error)
     for filepath, lineno in reversed(python_hits):
@@ -67,8 +97,8 @@ def extract_context(stderr: str, cwd: Optional[str] = None) -> Optional[CodeCont
         if ctx:
             return ctx
 
-    # Node.js: try first match first (top of call stack = user's code)
-    for filepath, lineno in node_hits:
+    # Others: try first match first (top of call stack = user's code)
+    for filepath, lineno in other_hits:
         ctx = _read_safe(filepath, lineno, root)
         if ctx:
             return ctx
@@ -128,7 +158,11 @@ def _read_safe(filepath: str, lineno: int, root: Path) -> Optional[CodeContext]:
 def is_external_path(path_str: str, root: Path) -> bool:
     """Check if a path indicates a framework/stdlib or is outside the project root."""
     path_str = path_str.replace("\\", "/")
-    if any(marker in path_str for marker in ["site-packages", "node_modules", "lib/python", "vendor/"]):
+    external_markers = [
+        "site-packages", "node_modules", "lib/python", "vendor/",
+        ".cargo/registry", "go/pkg/mod", ".m2/repository"
+    ]
+    if any(marker in path_str for marker in external_markers):
         return True
     
     path_obj = Path(path_str)
@@ -188,6 +222,21 @@ def trim_stack_trace(stderr: str, cwd: Optional[str] = None, ignore_patterns: Op
             if is_external_path(path, root):
                 hidden_count += 1
                 continue
+                
+        # Check Rust, Go, Java, Docker frames
+        other_path = None
+        rust_m = re.search(r'-->\s+([^:]+):\d+:\d+', line)
+        if rust_m: other_path = rust_m.group(1)
+        else:
+            go_m = re.search(r'^\s*([^\s:]+\.go):\d+:\d+', line)
+            if go_m: other_path = go_m.group(1)
+            else:
+                java_m = re.search(r'([^:\s]+\.java):\[\d+,\d+\]', line) or re.search(r'at\s+[\w\.\$]+\(([^:]+\.java):\d+\)', line)
+                if java_m: other_path = java_m.group(1)
+                
+        if other_path and is_external_path(other_path, root):
+            hidden_count += 1
+            continue
         
         # Keep this line, flush hidden marker if needed
         if hidden_count > 0:

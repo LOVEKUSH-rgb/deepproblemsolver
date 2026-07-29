@@ -49,7 +49,7 @@ def load_project_config() -> Dict[str, Any]:
             data = yaml.safe_load(f)
             return data if isinstance(data, dict) else {}
     except yaml.YAMLError as e:
-        console.print(f"\n[bold red]✗ Failed to parse .envfix.yaml:[/bold red]\n{e}")
+        console.print(f"\n[bold red][X] Failed to parse .envfix.yaml:[/bold red]\n{e}")
         raise typer.Exit(code=1)
     except OSError:
         return {}
