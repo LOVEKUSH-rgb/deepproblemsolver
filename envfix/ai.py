@@ -54,6 +54,20 @@ PROMPT_TEMPLATE_WITH_CONTEXT = (
     "FIX: python -m pip install torch"
 )
 
+PROMPT_DOCTOR_TEMPLATE = (
+    "You are diagnosing a development environment compatibility issue on a Windows machine.\n"
+    "Conflict detected: {conflict_details}\n\n"
+    "Explain in 1-2 plain-English sentences why this version mismatch causes problems, "
+    "then suggest exactly ONE shell command that would likely fix it (e.g. downgrading/upgrading a package).\n"
+    "Respond in this exact format:\n"
+    "DIAGNOSIS: <text>\n"
+    "FIX: <command>\n\n"
+    "IMPORTANT rules for the FIX command:\n"
+    "- If it's a Python pip error, use 'python -m pip install ...' instead of 'pip install ...'\n"
+    "- NO backticks, NO markdown formatting, NO surrounding quotes around the command\n"
+    "- Give a single runnable shell command only\n"
+)
+
 DEFAULT_MODEL = "llama3.1:8b"
 
 
@@ -115,6 +129,18 @@ def get_diagnosis(
     raw = get_provider(provider, model).diagnose(prompt)
     return _parse_response(raw)
 
+
+def get_doctor_fix(
+    conflict_details: str,
+    model: str = DEFAULT_MODEL,
+    provider: str = "ollama",
+) -> DiagnosisResult:
+    """
+    Send a compatibility warning to the chosen AI provider to get an explanation and fix.
+    """
+    prompt = PROMPT_DOCTOR_TEMPLATE.format(conflict_details=conflict_details)
+    raw = get_provider(provider, model).diagnose(prompt)
+    return _parse_response(raw)
 
 def _parse_response(raw: str) -> DiagnosisResult:
     """

@@ -31,6 +31,8 @@ from envfix.git_utils import (
     has_uncommitted_changes,
     create_safety_stash,
 )
+from envfix.doctor import run_all_checks, CheckResult
+from envfix.ai import get_doctor_fix
 
 app = typer.Typer(
     name="envfix",
@@ -156,17 +158,150 @@ def config_cmd(
 
 
 @app.command("doctor")
-def doctor_cmd() -> None:
-    """Report the current operating mode and system configuration."""
+def doctor_cmd(
+    model: Optional[str] = typer.Option(
+        None,
+        "--model",
+        help="Model tag to use for diagnosis.",
+    ),
+    provider: Optional[str] = typer.Option(
+        None,
+        "--provider",
+        help="AI provider to use (ollama, groq, gemini).",
+    ),
+) -> None:
+    """Report the current operating mode and proactive system compatibility checks."""
     config = load_config()
     is_local = str(config.get("local_only", "")).lower() == "true" or config.get("local_only") is True
     
+    if not provider:
+        provider = config.get("default_provider", "ollama")
+    if not model:
+        model = config.get("default_model", "llama3.1:8b")
+        
     console.print("\n[bold cyan]envfix Doctor[/bold cyan]\n")
     
     if is_local:
-        console.print("[bold green]Local-only mode: ENABLED — no data leaves this machine except to your local Ollama instance.[/bold green]")
+        console.print("[bold green]Local-only mode: ENABLED - no data leaves this machine except to your local Ollama instance.[/bold green]\n")
+        if provider.lower() in ["groq", "gemini"]:
+            console.print("[bold red]Error:[/bold red] Local-only mode is enabled; cloud providers are disabled.")
+            raise typer.Exit(code=1)
     else:
-        console.print("[bold yellow]Local-only mode: DISABLED — cloud telemetry or cloud AI providers may be used if configured.[/bold yellow]")
+        console.print("[bold yellow]Local-only mode: DISABLED - cloud telemetry or cloud AI providers may be used if configured.[/bold yellow]\n")
+
+    console.print("[bold]Running Environment Checks...[/bold]")
+    checks = run_all_checks()
+    
+    warnings = []
+    
+    for check in checks:
+        if check.ok and not check.warning:
+            version_str = f" {check.version}" if check.version else ""
+            details_str = f" ({check.details})" if check.details else ""
+            console.print(f"[green][OK][/green] {check.name}{version_str}{details_str} - OK")
+        elif check.warning:
+            console.print(f"[bold yellow][WARNING][/bold yellow] [yellow]{check.warning} - potential compatibility issue[/yellow]")
+            warnings.append(check)
+        else:
+            console.print(f"[red][ERROR][/red] [red]{check.warning}[/red]")
+            
+    if not warnings:
+        console.print("\n[bold green][OK] All checks passed - environment looks healthy[/bold green]")
+        return
+        
+    console.print("\n[bold]Consulting AI for explanations and fixes...[/bold]")
+    proposed_fixes = []
+    
+    for check in warnings:
+        try:
+            result = get_doctor_fix(
+                conflict_details=check.warning,
+                model=model,
+                provider=provider
+            )
+            proposed_fixes.append({
+                "check": check,
+                "diagnosis": result.diagnosis,
+                "fix": result.fix,
+                "raw_response": result.raw_response
+            })
+            _show_fix_panel(result.diagnosis, result.fix, provider)
+        except Exception as exc:
+            console.print(f"[bold red]Error reaching {provider} for {check.name}:[/bold red] {exc}")
+            
+    if not proposed_fixes:
+        return
+        
+    approved = Confirm.ask("\n[bold]Fix all detected issues?[/bold]", default=False)
+    
+    if not approved:
+        console.print("[dim]Exiting without changes.[/dim]")
+        for pf in proposed_fixes:
+            log_attempt(
+                original_command="envfix doctor",
+                error_text=pf["check"].warning,
+                diagnosis=pf["diagnosis"],
+                fix_command=pf["fix"],
+                user_approved=False,
+                fix_worked=None,
+                source=provider,
+                category="doctor_scan",
+                provider=provider,
+                entry_type="doctor_scan"
+            )
+        return
+        
+    # Git Safety Backup
+    stash_created = False
+    if not is_in_git_repo():
+        console.print(
+            "[bold yellow]Warning: not in a git repository. envfix cannot create "
+            "a safety backup before applying fixes. Consider running 'git init' "
+            "for safety.[/bold yellow]\n"
+        )
+    elif has_uncommitted_changes():
+        if create_safety_stash():
+            stash_created = True
+
+    # Execute fixes sequentially
+    for pf in proposed_fixes:
+        fix_cmd = pf["fix"]
+        if fix_cmd.strip() == "None (Code change required)":
+            console.print(f"\n[bold yellow][WARNING] Skipping {pf['check'].name}:[/bold yellow] Manual code change required.")
+            continue
+            
+        console.print(f"\n[bold cyan]⚙ Applying fix for {pf['check'].name}:[/bold cyan] {fix_cmd}")
+        fix_stdout, fix_stderr, fix_rc = run_command(fix_cmd)
+        
+        if fix_stdout:
+            console.print(fix_stdout, end="")
+        if fix_stderr:
+            console.print(fix_stderr, end="")
+            
+        worked = (fix_rc == 0)
+        if worked:
+            console.print(f"[bold green][OK] Fix applied successfully.[/bold green]")
+        else:
+            console.print(f"[bold red][ERROR] Fix failed (exit code {fix_rc}).[/bold red]")
+            
+        log_attempt(
+            original_command="envfix doctor",
+            error_text=pf["check"].warning,
+            diagnosis=pf["diagnosis"],
+            fix_command=fix_cmd,
+            user_approved=True,
+            fix_worked=worked,
+            source=provider,
+            category="doctor_scan",
+            provider=provider,
+            entry_type="doctor_scan"
+        )
+        
+    if stash_created:
+        console.print(
+            "\n[bold cyan]A safety backup was created. If these fixes caused "
+            "problems, run: git stash pop[/bold cyan]"
+        )
 
 
 @app.command(

@@ -1,0 +1,40 @@
+{
+    "torch_cuda_matrix": [
+        {
+            "torch_version": "2.2.0",
+            "cuda_required": "11.8 or 12.1"
+        },
+        {
+            "torch_version": "2.2.1",
+            "cuda_required": "11.8 or 12.1"
+        },
+        {
+            "torch_version": "2.2.2",
+            "cuda_required": "11.8 or 12.1"
+        },
+        {
+            "torch_version": "2.3.0",
+            "cuda_required": "11.8 or 12.1"
+        },
+        {
+            "torch_version": "2.3.1",
+            "cuda_required": "11.8 or 12.1"
+        },
+        {
+            "torch_version": "2.4.0",
+            "cuda_required": "11.8, 12.1 or 12.4"
+        },
+        {
+            "torch_version": "2.4.1",
+            "cuda_required": "11.8, 12.1 or 12.4"
+        },
+        {
+            "torch_version": "2.5.0",
+            "cuda_required": "11.8 or 12.4"
+        },
+        {
+            "torch_version": "2.5.1",
+            "cuda_required": "11.8 or 12.4"
+        }
+    ]
+}

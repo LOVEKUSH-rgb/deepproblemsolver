@@ -43,6 +43,7 @@ def log_attempt(
     category: str = "general",
     context_included: bool = False,
     provider: str = "ollama",
+    entry_type: str = "reactive_fix",
 ) -> None:
     """
     Append one attempt record to the user's personal log file.
@@ -77,6 +78,7 @@ def log_attempt(
     """
     record: dict[str, Any] = {
         "timestamp":        datetime.now(timezone.utc).isoformat(),
+        "entry_type":       entry_type,
         "original_command": original_command,
         "error_text":       error_text,
         "diagnosis":        diagnosis,
@@ -108,13 +110,15 @@ def log_attempt(
         else:
             error_type = last_line[:50]
 
-    send_telemetry(
-        error_type=error_type,
-        provider_used=provider or "unknown",
-        was_cache_hit=(source == "cache"),
-        fix_applied=user_approved,
-        fix_worked=fix_worked
-    )
+    # Only send telemetry for reactive_fix attempts
+    if entry_type == "reactive_fix":
+        send_telemetry(
+            error_type=error_type,
+            provider_used=provider or "unknown",
+            was_cache_hit=(source == "cache"),
+            fix_applied=user_approved,
+            fix_worked=fix_worked
+        )
 
 
 def get_history(log_file: str = LOG_FILE) -> list[dict[str, Any]]:
@@ -170,4 +174,5 @@ def _normalise_entry(entry: dict[str, Any]) -> dict[str, Any]:
         "category":         entry.get("category", "general"),
         "context_included": bool(entry.get("context_included", False)),
         "provider":         entry.get("provider", "ollama"),
+        "entry_type":       entry.get("entry_type", "reactive_fix"),
     }
