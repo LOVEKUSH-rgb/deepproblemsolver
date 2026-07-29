@@ -61,3 +61,14 @@ class TeamStats(BaseModel):
     hourly_rate: float
     most_used_provider: Optional[str]
     error_type_breakdown: dict[str, int]
+
+class CommunityReportCreate(BaseModel):
+    signature: str
+    category: str
+    fix_command: str
+    worked: bool
+
+class CommunityLookupResponse(BaseModel):
+    fix_command: str
+    success_rate: float
+    sample_size: int

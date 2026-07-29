@@ -181,3 +181,68 @@ def get_team_stats(
         most_used_provider=most_used_provider,
         error_type_breakdown=error_type_breakdown
     )
+
+import time
+from fastapi import Request
+
+ip_rate_limits = {}
+
+@app.post("/community/report")
+def report_community_fix(report: schemas.CommunityReportCreate, request: Request, db: Session = Depends(get_db)):
+    client_ip = request.client.host if request.client else "unknown"
+    now = time.time()
+    
+    if client_ip in ip_rate_limits:
+        last_time, count = ip_rate_limits[client_ip]
+        if now - last_time < 3600:
+            if count > 100:
+                raise HTTPException(status_code=429, detail="Rate limit exceeded")
+            ip_rate_limits[client_ip] = (last_time, count + 1)
+        else:
+            ip_rate_limits[client_ip] = (now, 1)
+    else:
+        ip_rate_limits[client_ip] = (now, 1)
+
+    fix = db.query(models.CommunityFix).filter(
+        models.CommunityFix.error_signature == report.signature,
+        models.CommunityFix.category == report.category,
+        models.CommunityFix.fix_command == report.fix_command
+    ).first()
+    
+    if fix:
+        if report.worked:
+            fix.success_count += 1
+        else:
+            fix.failure_count += 1
+    else:
+        fix = models.CommunityFix(
+            error_signature=report.signature,
+            category=report.category,
+            fix_command=report.fix_command,
+            success_count=1 if report.worked else 0,
+            failure_count=0 if report.worked else 1
+        )
+        db.add(fix)
+        
+    db.commit()
+    return {"status": "ok"}
+
+@app.get("/community/lookup", response_model=schemas.CommunityLookupResponse)
+def lookup_community_fix(signature: str, category: str, db: Session = Depends(get_db)):
+    fixes = db.query(models.CommunityFix).filter(
+        models.CommunityFix.error_signature == signature,
+        models.CommunityFix.category == category
+    ).all()
+    
+    valid_fixes = [f for f in fixes if (f.success_count + f.failure_count) >= 10]
+    if not valid_fixes:
+        raise HTTPException(status_code=404, detail="No trusted community fix found")
+        
+    best_fix = max(valid_fixes, key=lambda f: f.success_count / (f.success_count + f.failure_count))
+    success_rate = best_fix.success_count / (best_fix.success_count + best_fix.failure_count)
+    
+    return schemas.CommunityLookupResponse(
+        fix_command=best_fix.fix_command,
+        success_rate=success_rate,
+        sample_size=best_fix.success_count + best_fix.failure_count
+    )

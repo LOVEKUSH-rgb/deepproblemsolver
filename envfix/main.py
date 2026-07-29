@@ -19,8 +19,10 @@ from envfix.context import extract_context, trim_stack_trace
 from envfix.logger import LOG_FILE, get_history, get_log_file, log_attempt
 from envfix.telemetry import send_telemetry
 from envfix.redact import redact_secrets
+from envfix.signature import generate_signature
 from envfix.preview import get_fix_preview, is_destructive
 from envfix.runner import run_command
+import requests
 from envfix.dependencies import (
     extract_package_name,
     update_requirements_txt,
@@ -102,6 +104,7 @@ def config_cmd(
     show: bool = typer.Option(False, "--show", help="Show current configuration."),
     reset: bool = typer.Option(False, "--reset", help="Reset configuration to defaults."),
     local_only: Optional[str] = typer.Option(None, "--local-only", help="Enable or disable strict local-only mode (true/false)."),
+    contribute_to_community: Optional[str] = typer.Option(None, "--contribute-to-community", help="Enable or disable anonymous community error database (true/false)."),
 ) -> None:
     """Manage envfix global configuration interactively."""
     if reset:
@@ -125,13 +128,21 @@ def config_cmd(
         console.print(table)
         return
 
-    if local_only is not None:
-        local_only_val = local_only.strip().lower() == "true"
+    if local_only is not None or contribute_to_community is not None:
         config_data = load_config()
-        config_data["local_only"] = local_only_val
+        if local_only is not None:
+            local_only_val = local_only.strip().lower() == "true"
+            config_data["local_only"] = local_only_val
+            mode = "ENABLED" if local_only_val else "DISABLED"
+            console.print(f"\n[bold green]Local-only mode {mode}.[/bold green]")
+        
+        if contribute_to_community is not None:
+            contrib_val = contribute_to_community.strip().lower() == "true"
+            config_data["contribute_to_community"] = contrib_val
+            mode = "ENABLED" if contrib_val else "DISABLED"
+            console.print(f"\n[bold green]Community contribution {mode}.[/bold green]")
+            
         save_config(config_data)
-        mode = "ENABLED" if local_only_val else "DISABLED"
-        console.print(f"\n[bold green]Local-only mode {mode}.[/bold green]")
         return
 
     console.print("[bold cyan]envfix Configuration Setup[/bold cyan]\n")
@@ -411,8 +422,8 @@ def run(
     code_context = extract_context(error_text)
     if code_context:
         console.print(
-            f"[dim]📎 Context found: {code_context.filepath} "
-            f"(lines {code_context.start_line}–{code_context.end_line})[/dim]"
+            f"[dim][Context] Context found: {code_context.filepath} "
+            f"(lines {code_context.start_line}-{code_context.end_line})[/dim]"
         )
 
     # ── Step 4: Check known-fix cache before calling the model ───────────
@@ -426,13 +437,13 @@ def run(
     if cache_hit:
         if cache_hit.previously_worked:
             banner = (
-                f"⚡ Found a previously [bold green]verified[/bold green] fix "
-                f"for a similar error ({cache_hit.score:.0%} match) — skipping model call."
+                f"[Cache] Found a previously [bold green]verified[/bold green] fix "
+                f"for a similar error ({cache_hit.score:.0%} match) - skipping model call."
             )
         else:
             banner = (
-                f"⚡ Found a previously [bold yellow]attempted[/bold yellow] fix "
-                f"for a similar error ({cache_hit.score:.0%} match) — "
+                f"[Cache] Found a previously [bold yellow]attempted[/bold yellow] fix "
+                f"for a similar error ({cache_hit.score:.0%} match) - "
                 "skipping model call. [dim](fix didn't fully resolve it last time)[/dim]"
             )
         console.print(f"\n{banner}")
@@ -443,57 +454,78 @@ def run(
         source = "cache"
         _show_fix_panel(diagnosis, fix, source, cache_hit.score)
     else:
-        # ── Step 4a: Ask the LLM ─────────────────────────────────────────
-        provider_name = provider.capitalize()
-        display_model = get_actual_model(model, provider)
-        console.print(
-            f"\n[bold yellow][AI] Asking {provider_name} ({display_model}) for a diagnosis...[/bold yellow]"
-        )
-        try:
-            trimmed_error = trim_stack_trace(
-                error_text,
-                ignore_patterns=config.get("ignore_patterns", [])
-            )
-            result = get_diagnosis(
-                stderr=trimmed_error,
-                model=model,
-                category=category,
-                code_context=code_context,
-                provider=provider,
-            )
-        except RuntimeError as exc:
-            console.print(f"\n[bold red]Error reaching {provider_name}:[/bold red] {exc}")
-            raise typer.Exit(code=1)
-
-        if not result.parsed_ok:
+        community_hit = False
+        if config.get("contribute_to_community"):
+            sig = generate_signature(error_text, category)
+            try:
+                backend_url = config.get("backend_url", "http://localhost:8000")
+                resp = requests.get(f"{backend_url}/community/lookup", params={"signature": sig, "category": category}, timeout=3)
+                if resp.status_code == 200:
+                    data = resp.json()
+                    diagnosis = "Community-sourced fix"
+                    fix = _clean_fix(data["fix_command"])
+                    source = "community"
+                    rate = data["success_rate"]
+                    samples = data["sample_size"]
+                    banner = f"[Community] Found a community fix with {rate:.0%} success across {samples} reports!"
+                    console.print(f"\n[bold green]{banner}[/bold green]")
+                    _show_fix_panel(diagnosis, fix, source, rate)
+                    community_hit = True
+            except requests.RequestException:
+                pass
+                
+        if not community_hit:
+            # ── Step 4a: Ask the LLM ─────────────────────────────────────────
+            provider_name = provider.capitalize()
+            display_model = get_actual_model(model, provider)
             console.print(
-                "\n[bold yellow]⚠ Could not parse a structured response. "
-                "Showing raw model output:[/bold yellow]"
+                f"\n[bold yellow][AI] Asking {provider_name} ({display_model}) for a diagnosis...[/bold yellow]"
             )
-            console.print(
-                Panel(result.raw_response, border_style="yellow", expand=False)
-            )
-            log_attempt(
-                original_command=redact_secrets(cmd),
-                error_text=error_text,
-                diagnosis=result.diagnosis,
-                fix_command=result.fix,
-                user_approved=False,
-                fix_worked=None,
-                source=provider,
-                category=category,
-                context_included=code_context is not None,
-                provider=provider,
-            )
-            raise typer.Exit(code=1)
-
-        diagnosis = result.diagnosis
-        fix = result.fix
-        _show_fix_panel(diagnosis, fix, source)
+            try:
+                trimmed_error = trim_stack_trace(
+                    error_text,
+                    ignore_patterns=config.get("ignore_patterns", [])
+                )
+                result = get_diagnosis(
+                    stderr=trimmed_error,
+                    model=model,
+                    category=category,
+                    code_context=code_context,
+                    provider=provider,
+                )
+            except RuntimeError as exc:
+                console.print(f"\n[bold red]Error reaching {provider_name}:[/bold red] {exc}")
+                raise typer.Exit(code=1)
+    
+            if not result.parsed_ok:
+                console.print(
+                    "\n[bold yellow][Warning] Could not parse a structured response. "
+                    "Showing raw model output:[/bold yellow]"
+                )
+                console.print(
+                    Panel(result.raw_response, border_style="yellow", expand=False)
+                )
+                log_attempt(
+                    original_command=redact_secrets(cmd),
+                    error_text=error_text,
+                    diagnosis=result.diagnosis,
+                    fix_command=result.fix,
+                    user_approved=False,
+                    fix_worked=None,
+                    source=provider,
+                    category=category,
+                    context_included=code_context is not None,
+                    provider=provider,
+                )
+                raise typer.Exit(code=1)
+    
+            diagnosis = result.diagnosis
+            fix = result.fix
+            _show_fix_panel(diagnosis, fix, source)
 
     # ── Step 4b: Dry-run preview ──────────────────────────────────────────
     if fix.strip() == "None (Code change required)":
-        console.print("\n[bold yellow]⚠ This appears to be a logic error in your code, not an environment issue.[/bold yellow]")
+        console.print("\n[bold yellow][Warning] This appears to be a logic error in your code, not an environment issue.[/bold yellow]")
         console.print("[dim]envfix only applies shell command fixes. Please manually edit the code as per the diagnosis.[/dim]")
         
         log_attempt(
@@ -620,7 +652,7 @@ def run(
         # ── Post Fix Hook ───────────────────────────────────────────────────────
         hook = config.get("post_fix_hook")
         if hook:
-            console.print(f"\n[bold magenta]⚙ Running post-fix hook:[/bold magenta] {hook}")
+            console.print(f"\n[bold magenta][Hook] Running post-fix hook:[/bold magenta] {hook}")
             hook_stdout, hook_stderr, _ = run_command(hook)
             if hook_stdout:
                 console.print(hook_stdout, end="")
@@ -652,7 +684,25 @@ def run(
         context_included=code_context is not None,
         provider=provider,
     )
-    console.print(f"\n[dim]📝 Attempt logged to {get_log_file()}[/dim]")
+    console.print(f"\n[dim][Log] Attempt logged to {get_log_file()}[/dim]")
+    
+    if config.get("contribute_to_community"):
+        try:
+            sig = generate_signature(error_text, category)
+            backend_url = config.get("backend_url", "http://localhost:8000")
+            requests.post(
+                f"{backend_url}/community/report",
+                json={
+                    "signature": sig,
+                    "category": category,
+                    "fix_command": fix,
+                    "worked": worked
+                },
+                timeout=3
+            )
+        except requests.RequestException:
+            pass # Fail silently if backend is unavailable
+
     raise typer.Exit(code=0 if worked else 1)
 
 
@@ -738,7 +788,7 @@ def diagnose_cmd(
     if cache_hit:
         diagnosis_text = cache_hit.diagnosis
         fix_text = _clean_fix(cache_hit.fix)
-        source_tag = f" (from cache — {cache_hit.score:.0%} match)"
+        source_tag = f" (from cache - {cache_hit.score:.0%} match)"
     else:
         try:
             trimmed_error = trim_stack_trace(
@@ -857,8 +907,8 @@ def history(
         except (ValueError, TypeError):
             when = ts[:16]
 
-        orig_cmd = entry.get("original_command", "—")
-        fix_cmd  = entry.get("fix_command", "—")
+        orig_cmd = entry.get("original_command", "-")
+        fix_cmd  = entry.get("fix_command", "-")
 
         approved_val = entry.get("user_approved")
         worked_val   = entry.get("fix_worked")
@@ -870,7 +920,7 @@ def history(
         elif worked_val is False:
             worked_str = "[red][X] no[/red]"
         else:
-            worked_str = "[dim]—[/dim]"
+            worked_str = "[dim]-[/dim]"
 
         source_str = entry.get("source", "ollama")
         cat_str = entry.get("category", "general")

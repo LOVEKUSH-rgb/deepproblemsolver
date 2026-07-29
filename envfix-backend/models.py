@@ -31,3 +31,14 @@ class Event(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
     team = relationship("Team", back_populates="events")
+
+class CommunityFix(Base):
+    __tablename__ = "community_fixes"
+
+    id = Column(Integer, primary_key=True, index=True)
+    error_signature = Column(String, index=True, nullable=False)
+    category = Column(String, index=True, nullable=False)
+    fix_command = Column(String, nullable=False)
+    success_count = Column(Integer, default=0, nullable=False)
+    failure_count = Column(Integer, default=0, nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
