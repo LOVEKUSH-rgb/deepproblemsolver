@@ -99,14 +99,99 @@ def check_torch_cuda_compat(system_cuda_version: Optional[str]) -> CheckResult:
         
     return CheckResult(name="PyTorch", ok=True, version=torch_version, warning=None)
 
-def run_all_checks() -> List[CheckResult]:
-    results = []
-    results.append(check_python())
-    results.append(check_node())
-    cuda_result = check_cuda()
-    results.append(cuda_result)
+def check_docker() -> CheckResult:
+    out = _run_cmd(["docker", "--version"])
+    if not out:
+        return CheckResult(name="Docker", ok=True, version=None, warning=None, details="Not installed")
     
-    if cuda_result.version:
-        results.append(check_torch_cuda_compat(cuda_result.version))
+    version = out.replace("Docker version ", "").split(",")[0].strip()
+    
+    try:
+        res = subprocess.run(["docker", "info"], capture_output=True, text=True, timeout=5)
+        if res.returncode != 0:
+            return CheckResult(name="Docker", ok=False, version=version, warning="Docker is installed but the daemon is not running.", details="Daemon inactive")
+    except Exception:
+        return CheckResult(name="Docker", ok=False, version=version, warning="Docker is installed but the daemon is not running or unreachable.", details="Daemon inactive")
+        
+    return CheckResult(name="Docker", ok=True, version=version, warning=None, details="Daemon running")
+
+
+def check_conda() -> CheckResult:
+    out = _run_cmd(["conda", "--version"])
+    if not out:
+        return CheckResult(name="Conda", ok=True, version=None, warning=None, details="Not installed")
+        
+    version = out.replace("conda ", "").strip()
+    active_env = os.environ.get("CONDA_DEFAULT_ENV", "base")
+    
+    env_yml_path = os.path.join(os.getcwd(), "environment.yml")
+    if os.path.exists(env_yml_path):
+        try:
+            with open(env_yml_path, "r", encoding="utf-8") as f:
+                for line in f:
+                    if line.strip().startswith("name:"):
+                        expected_env = line.split(":", 1)[1].strip()
+                        # Unquote if necessary
+                        if expected_env.startswith('"') and expected_env.endswith('"'):
+                            expected_env = expected_env[1:-1]
+                        elif expected_env.startswith("'") and expected_env.endswith("'"):
+                            expected_env = expected_env[1:-1]
+                            
+                        if expected_env and expected_env != active_env:
+                            warning = f"Active conda environment '{active_env}' does not match expected '{expected_env}' from environment.yml"
+                            return CheckResult(name="Conda", ok=False, version=version, warning=warning, details=f"Expected: {expected_env}")
+                        break
+        except Exception:
+            pass
+            
+    return CheckResult(name="Conda", ok=True, version=version, warning=None, details=f"Active env: {active_env}")
+
+
+def check_path() -> CheckResult:
+    python_path = _run_cmd(["where", "python"])
+    pip_path = _run_cmd(["where", "pip"])
+    
+    if python_path and pip_path:
+        python_primary = python_path.splitlines()[0].strip().lower()
+        pip_primary = pip_path.splitlines()[0].strip().lower()
+        
+        python_dir = os.path.dirname(python_primary)
+        pip_dir = os.path.dirname(pip_primary)
+        
+        def get_base(p: str) -> str:
+            return p.replace("\\scripts", "").replace("\\bin", "")
+            
+        if get_base(python_dir) != get_base(pip_dir):
+            warning = f"Python and pip resolve to different environments. Python: {python_primary}, Pip: {pip_primary}"
+            return CheckResult(name="PATH", ok=False, version=None, warning=warning, details="Inconsistent paths")
+            
+    return CheckResult(name="PATH", ok=True, version=None, warning=None)
+
+
+def run_all_checks(
+    run_python: bool = True,
+    run_node: bool = True,
+    run_gpu: bool = True,
+    run_docker: bool = True,
+    run_conda: bool = True,
+    run_path: bool = True,
+) -> List[CheckResult]:
+    results = []
+    
+    if run_python:
+        results.append(check_python())
+    if run_node:
+        results.append(check_node())
+    if run_gpu:
+        cuda_result = check_cuda()
+        results.append(cuda_result)
+        if cuda_result.version:
+            results.append(check_torch_cuda_compat(cuda_result.version))
+    if run_docker:
+        results.append(check_docker())
+    if run_conda:
+        results.append(check_conda())
+    if run_path:
+        results.append(check_path())
         
     return results

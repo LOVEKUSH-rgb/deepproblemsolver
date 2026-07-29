@@ -169,6 +169,12 @@ def doctor_cmd(
         "--provider",
         help="AI provider to use (ollama, groq, gemini).",
     ),
+    gpu: bool = typer.Option(False, "--gpu", help="Run only GPU/CUDA checks."),
+    docker: bool = typer.Option(False, "--docker", help="Run only Docker checks."),
+    python: bool = typer.Option(False, "--python", help="Run only Python checks."),
+    node: bool = typer.Option(False, "--node", help="Run only Node.js checks."),
+    conda: bool = typer.Option(False, "--conda", help="Run only Conda checks."),
+    path: bool = typer.Option(False, "--path", help="Run only PATH checks."),
 ) -> None:
     """Report the current operating mode and proactive system compatibility checks."""
     config = load_config()
@@ -190,7 +196,16 @@ def doctor_cmd(
         console.print("[bold yellow]Local-only mode: DISABLED - cloud telemetry or cloud AI providers may be used if configured.[/bold yellow]\n")
 
     console.print("[bold]Running Environment Checks...[/bold]")
-    checks = run_all_checks()
+    
+    run_all = not any([gpu, docker, python, node, conda, path])
+    checks = run_all_checks(
+        run_python=python or run_all,
+        run_node=node or run_all,
+        run_gpu=gpu or run_all,
+        run_docker=docker or run_all,
+        run_conda=conda or run_all,
+        run_path=path or run_all,
+    )
     
     warnings = []
     
