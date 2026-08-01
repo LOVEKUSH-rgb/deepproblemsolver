@@ -353,6 +353,15 @@ If the network request fails, `envfix` will silently swallow the error to guaran
 
 ---
 
+## Safety Features
+
+- **Internal errors are handled gracefully.** If envfix hits an unexpected internal bug (not your code, but a bug in envfix itself), it shows a clean message instead of a raw Python traceback, and logs full details locally for debugging — run `envfix share` to generate a shareable report if you hit one.
+- **Indexing safety limits.** `envfix index` skips files over 1MB, skips known secret/credential files (`.env`, `*.pem`, `*.key`, `credentials.json`, and similar) entirely, and pauses with a warning rather than silently indexing huge, unrelated directory trees.
+- **Fix safety.** Every applied fix is preceded by an automatic git safety backup, with one-command rollback (`git stash pop`). Outside a git repository, envfix halts before modifying files by default (`--danger-override` to proceed anyway).
+- **Pre-commit hook is a fast, local-only check.** `envfix hook install` catches syntax errors before commit using no AI/network calls — it won't catch logic bugs or environment issues, only structural syntax problems, by design, to stay fast.
+
+---
+
 ## Security & Data Redaction
 
 Before any error text, stack trace, or code snippet is logged locally or sent to an AI provider (Ollama, Groq, Gemini), `envfix` runs it through a **best-effort Secret Redaction Layer**. 
