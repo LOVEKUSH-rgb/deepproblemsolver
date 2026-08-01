@@ -42,6 +42,14 @@ app = typer.Typer(
     help="Diagnose and auto-fix Python/ML environment errors using a local LLM.",
 )
 
+from envfix.hook import hook_app, run_hook_check
+app.add_typer(hook_app)
+
+@app.command("hook-check", hidden=True)
+def hook_check_cmd() -> None:
+    """Internal fast syntax checker run by the pre-commit hook."""
+    run_hook_check()
+
 console = Console()
 
 

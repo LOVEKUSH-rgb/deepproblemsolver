@@ -132,6 +132,27 @@ envfix --install-completion
 envfix run <your failing command>
 ```
 
+
+
+### Git Pre-commit Hook
+
+`envfix` includes a built-in pre-commit hook that performs **ultra-fast local syntax checking** to catch broken code (like missing colons or parentheses) before it enters your commit history.
+
+**Install the hook:**
+```bash
+envfix hook install
+```
+
+When you commit, the hook will use native `ast` parsing to instantly scan your staged `.py` files. *Note: `envfix hook-check` is designed to be near-instant and does NOT use AI or make network requests. It only validates code syntax locally.*
+
+If an error is found, the commit will be blocked and you'll see a clear error:
+`Hold on! file.py has a syntax error on line 42: '(' was never closed.`
+
+**Uninstall the hook:**
+```bash
+envfix hook uninstall
+```
+
 ### Common examples
 
 ```bash
