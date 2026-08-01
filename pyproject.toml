@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "envfix"
-version = "0.5.2"
+version = "0.5.3"
 description = "CLI tool that diagnoses and auto-fixes Python/ML environment errors using a local LLM."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -43,7 +43,7 @@ Repository = "https://github.com/LOVEKUSH-rgb/deepproblemsolver"
 "Bug Tracker" = "https://github.com/LOVEKUSH-rgb/deepproblemsolver/issues"
 
 [project.scripts]
-envfix = "envfix.main:app"
+envfix = "envfix.main:main"
 
 [tool.setuptools.packages.find]
 where   = ["."]

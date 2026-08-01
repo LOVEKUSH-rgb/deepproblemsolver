@@ -94,19 +94,25 @@ def run_hook_check() -> None:
     
     for file_str in files:
         filepath = Path(file_str)
-        if not filepath.exists() or filepath.suffix != ".py":
+        if not filepath.exists() or filepath.suffix not in {".py", ".js", ".ts"}:
+            continue
+            
+        if filepath.suffix != ".py":
+            # Fast syntax checking for JS/TS is not yet implemented locally
             continue
             
         try:
-            content = filepath.read_text(encoding="utf-8")
+            with open(filepath, "r", encoding="utf-8") as f:
+                content = f.read()
             ast.parse(content, filename=str(filepath))
+        except UnicodeDecodeError:
+            # Skip files that cannot be decoded as UTF-8 (e.g., binary files misnamed as .py)
+            continue
         except SyntaxError as e:
-            msg = str(e.msg)
-            lineno = e.lineno
-            console.print(f"\n[bold red]Hold on! {filepath} has a syntax error on line {lineno}: {msg}. Fix it before committing, or use 'git commit --no-verify' to bypass.[/bold red]\n")
             has_errors = True
-        except Exception:
-            pass
+            console.print(f"[red]Syntax error in staged file:[/red] {filepath}")
+            console.print(f"  Line {e.lineno}: {e.msg}")
             
     if has_errors:
-        raise typer.Exit(1)
+        console.print("[red]Commit rejected. Please fix the syntax errors above.[/red]")
+        sys.exit(1)

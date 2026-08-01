@@ -2,10 +2,6 @@
 
 from envfix.providers.base import AIProvider
 
-try:
-    import ollama as _ollama
-except ImportError:  # pragma: no cover
-    _ollama = None  # type: ignore[assignment]
 
 DEFAULT_OLLAMA_MODEL = "llama3.1:8b"
 
@@ -17,11 +13,14 @@ class OllamaProvider(AIProvider):
         self.model = model
 
     def diagnose(self, prompt_text: str) -> str:
-        if _ollama is None:
+        try:
+            import ollama as _ollama
+        except ImportError:
             raise RuntimeError(
                 "The 'ollama' Python package is not installed. "
                 "Run: pip install ollama"
             )
+
         try:
             response = _ollama.chat(
                 model=self.model,

@@ -1,8 +1,7 @@
 """main.py — Typer CLI entry point for envfix (Phase 2)."""
 
-import os
-import re
 import sys
+import os
 from datetime import datetime, timezone
 from typing import List, Optional
 
@@ -23,7 +22,7 @@ from envfix.redact import redact_secrets, redact_secrets_with_count
 from envfix.signature import generate_signature
 from envfix.preview import get_fix_preview, is_destructive
 from envfix.runner import run_command
-import requests
+
 from envfix.dependencies import (
     extract_package_name,
     update_requirements_txt,
@@ -40,6 +39,7 @@ from envfix.ai import get_doctor_fix
 app = typer.Typer(
     name="envfix",
     help="Diagnose and auto-fix Python/ML environment errors using a local LLM.",
+    pretty_exceptions_enable=False
 )
 
 from envfix.hook import hook_app, run_hook_check
@@ -521,6 +521,7 @@ def run(
             sig = generate_signature(error_text, category)
             try:
                 backend_url = config.get("backend_url", "http://localhost:8000")
+                import requests
                 resp = requests.get(f"{backend_url}/community/lookup", params={"signature": sig, "category": category}, timeout=3)
                 if resp.status_code == 200:
                     data = resp.json()
@@ -533,7 +534,7 @@ def run(
                     console.print(f"\n[bold green]{banner}[/bold green]")
                     _show_fix_panel(diagnosis, fix, source, rate)
                     community_hit = True
-            except requests.RequestException:
+            except Exception:
                 pass
                 
         if not community_hit:
@@ -790,6 +791,7 @@ def run(
         try:
             sig = generate_signature(error_text, category)
             backend_url = config.get("backend_url", "http://localhost:8000")
+            import requests
             requests.post(
                 f"{backend_url}/community/report",
                 json={
@@ -800,7 +802,7 @@ def run(
                 },
                 timeout=3
             )
-        except requests.RequestException:
+        except Exception:
             pass # Fail silently if backend is unavailable
 
     raise typer.Exit(code=0 if worked else 1)
@@ -1316,6 +1318,40 @@ def share_cmd(
     console.print(f"\n[green]Success! Bug report saved to bug_report.md - share this with a teammate or mentor.[/green]\n")
 
 
+def _handle_internal_error(e: Exception) -> None:
+    import traceback
+    from pathlib import Path
+    
+    error_log = Path.home() / ".envfix" / "error.log"
+    error_log.parent.mkdir(parents=True, exist_ok=True)
+    
+    try:
+        with open(error_log, "a", encoding="utf-8") as f:
+            f.write(f"\n--- Crash at {datetime.now(timezone.utc).isoformat()} ---\n")
+            traceback.print_exc(file=f)
+    except Exception:
+        pass
+        
+    exc_name = type(e).__name__
+    
+    hints = {
+        "UnicodeDecodeError": "This usually happens when a file is saved in an encoding other than UTF-8 (common on Windows with UTF-16 files).",
+        "PermissionError": "This usually happens when envfix doesn't have the necessary file or network permissions.",
+        "FileNotFoundError": "A file that envfix expected to read or write was not found.",
+        "ConnectionError": "envfix had trouble connecting to a network resource or the local AI provider.",
+        "JSONDecodeError": "envfix received an invalid or corrupted JSON response from an API or configuration file."
+    }
+    
+    hint = hints.get(exc_name, "An unexpected internal error occurred.")
+    
+    from rich.console import Console
+    console = Console()
+    console.print(f"\n[bold red][!] envfix internal error[/bold red]")
+    console.print(f"We hit an unexpected issue: [bold]{exc_name}[/bold]")
+    console.print(f"{hint}\n")
+    console.print("This is a bug in envfix itself, not your code. Consider running 'envfix share' to generate a report, or filing an issue at https://github.com/LOVEKUSH-rgb/deepproblemsolver/issues.\n")
+
+
 def main() -> None:  # pragma: no cover
     from envfix.update import start_update_check, print_update_message_if_available
     import sys
@@ -1326,6 +1362,10 @@ def main() -> None:  # pragma: no cover
     except SystemExit as e:
         print_update_message_if_available()
         sys.exit(e.code)
+    except Exception as e:
+        _handle_internal_error(e)
+        print_update_message_if_available()
+        sys.exit(1)
     else:
         print_update_message_if_available()
 

@@ -4,10 +4,6 @@ import os
 
 from envfix.providers.base import AIProvider
 
-try:
-    import groq as _groq
-except ImportError:
-    _groq = None  # type: ignore[assignment]
 
 DEFAULT_GROQ_MODEL = "llama-3.3-70b-versatile"
 
@@ -22,7 +18,9 @@ class GroqProvider(AIProvider):
         self.model = DEFAULT_GROQ_MODEL if model == DEFAULT_MODEL else model
 
     def diagnose(self, prompt_text: str) -> str:
-        if _groq is None:
+        try:
+            import groq as _groq
+        except ImportError:
             raise RuntimeError("The 'groq' Python package is not installed.")
 
         api_key = os.getenv("GROQ_API_KEY")

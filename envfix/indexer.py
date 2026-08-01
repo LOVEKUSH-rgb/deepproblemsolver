@@ -10,10 +10,7 @@ from typing import List, Dict, Any
 
 from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TimeElapsedColumn
 
-try:
-    import chromadb
-except ImportError:
-    chromadb = None  # type: ignore
+
 
 from envfix.embeddings import get_embedding
 
@@ -206,7 +203,9 @@ def chunk_generic_file(filepath: str, text: str, window: int = 50, overlap: int 
 
 def build_index(path: str = ".", update: bool = False, client_instance=None) -> None:
     """Scan and index the codebase."""
-    if chromadb is None:
+    try:
+        import chromadb
+    except ImportError:
         raise RuntimeError(
             "chromadb is not installed. Please run: pip install chromadb"
         )
@@ -250,7 +249,14 @@ def build_index(path: str = ".", update: bool = False, client_instance=None) -> 
         except json.JSONDecodeError:
             pass
 
-    client = client_instance or chromadb.PersistentClient(path=index_dir_path)
+    if client_instance is None:
+        try:
+            import chromadb
+            client = chromadb.PersistentClient(path=index_dir_path)
+        except ImportError:
+            raise RuntimeError("chromadb is required for indexing.")
+    else:
+        client = client_instance
     collection = client.get_or_create_collection("codebase")
     
     files_to_index = []
@@ -357,7 +363,13 @@ def query_index(query_text: str, top_k: int = 3, threshold: float = 1.2) -> List
     Query the local index for relevant chunks.
     Returns a list of redacted code chunks.
     """
-    if chromadb is None or not os.path.exists(INDEX_DIR):
+    try:
+        import chromadb
+        client = chromadb.PersistentClient(path=INDEX_DIR)
+    except ImportError:
+        return []
+    
+    if client is None or not os.path.exists(INDEX_DIR):
         return []
         
     emb = get_embedding(query_text)
@@ -365,7 +377,6 @@ def query_index(query_text: str, top_k: int = 3, threshold: float = 1.2) -> List
         return []
         
     try:
-        client = chromadb.PersistentClient(path=INDEX_DIR)
         collection = client.get_collection("codebase")
     except Exception:
         return []

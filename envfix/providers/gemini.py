@@ -4,10 +4,6 @@ import os
 
 from envfix.providers.base import AIProvider
 
-try:
-    from google import genai as _genai
-except ImportError:
-    _genai = None  # type: ignore[assignment]
 
 DEFAULT_GEMINI_MODEL = "gemini-3.5-flash"
 
@@ -20,7 +16,9 @@ class GeminiProvider(AIProvider):
         self.model = DEFAULT_GEMINI_MODEL if model == DEFAULT_MODEL else model
 
     def diagnose(self, prompt_text: str) -> str:
-        if _genai is None:
+        try:
+            from google import genai as _genai
+        except ImportError:
             raise RuntimeError("The 'google-genai' Python package is not installed.")
 
         api_key = os.getenv("GEMINI_API_KEY")
