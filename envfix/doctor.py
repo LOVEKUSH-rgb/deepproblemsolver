@@ -4,6 +4,7 @@ import re
 import subprocess
 from dataclasses import dataclass
 from typing import Optional, List
+from envfix.telemetry import send_doctor_telemetry
 
 @dataclass
 class CheckResult:
@@ -193,5 +194,9 @@ def run_all_checks(
         results.append(check_conda())
     if run_path:
         results.append(check_path())
+        
+    is_clean = all(r.ok for r in results)
+    check_results = [{"name": r.name, "ok": r.ok} for r in results]
+    send_doctor_telemetry(is_clean=is_clean, check_results=check_results)
         
     return results

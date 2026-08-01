@@ -46,3 +46,5 @@ dummy_log.txt
 mock_log.txt
 result.md
 test_output.log
+# envfix local index
+.envfix_index/

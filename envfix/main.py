@@ -1,6 +1,7 @@
 """main.py — Typer CLI entry point for envfix (Phase 2)."""
 
 import os
+import re
 import sys
 from datetime import datetime, timezone
 from typing import List, Optional
@@ -18,7 +19,7 @@ from envfix.config import load_config, save_config, reset_config
 from envfix.context import extract_context, trim_stack_trace
 from envfix.logger import LOG_FILE, get_history, get_log_file, log_attempt
 from envfix.telemetry import send_telemetry
-from envfix.redact import redact_secrets
+from envfix.redact import redact_secrets, redact_secrets_with_count
 from envfix.signature import generate_signature
 from envfix.preview import get_fix_preview, is_destructive
 from envfix.runner import run_command
@@ -46,6 +47,19 @@ console = Console()
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
+
+_ollama_warning_printed = False
+
+def _print_ollama_warning_if_needed(provider: str, model: str) -> None:
+    global _ollama_warning_printed
+    if not _ollama_warning_printed and provider.lower() == "ollama" and "3b" in model.lower():
+        console.print(
+            "\n[dim yellow]Note: smaller local models (3B parameters) may give vague or "
+            "incorrect diagnoses for complex errors. llama3.1:8b or a cloud "
+            "provider is recommended for tricky cases.[/dim yellow]"
+        )
+        _ollama_warning_printed = True
+
 
 def _quote_join(tokens: List[str]) -> str:
     """
@@ -186,6 +200,11 @@ def doctor_cmd(
     node: bool = typer.Option(False, "--node", help="Run only Node.js checks."),
     conda: bool = typer.Option(False, "--conda", help="Run only Conda checks."),
     path: bool = typer.Option(False, "--path", help="Run only PATH checks."),
+    danger_override: bool = typer.Option(
+        False,
+        "--danger-override",
+        help="Bypass the git safety halt when outside a repository.",
+    ),
 ) -> None:
     """Report the current operating mode and proactive system compatibility checks."""
     config = load_config()
@@ -240,6 +259,7 @@ def doctor_cmd(
     
     for check in warnings:
         try:
+            _print_ollama_warning_if_needed(provider, get_actual_model(model, provider))
             result = get_doctor_fix(
                 conflict_details=check.warning,
                 model=model,
@@ -280,11 +300,18 @@ def doctor_cmd(
     # Git Safety Backup
     stash_created = False
     if not is_in_git_repo():
-        console.print(
-            "[bold yellow]Warning: not in a git repository. envfix cannot create "
-            "a safety backup before applying fixes. Consider running 'git init' "
-            "for safety.[/bold yellow]\n"
-        )
+        if not danger_override:
+            console.print(
+                "[bold red]Safety halt: You are not in a Git repository. envfix cannot "
+                "guarantee safe rollbacks here. Commit your work to git first, or "
+                "run with --danger-override to proceed anyway.[/bold red]\n"
+            )
+            raise typer.Exit(code=1)
+        else:
+            console.print(
+                "[bold yellow]Warning: not in a git repository. envfix cannot create "
+                "a safety backup before applying fixes. Proceeding via --danger-override.[/bold yellow]\n"
+            )
     elif has_uncommitted_changes():
         if create_safety_stash():
             stash_created = True
@@ -330,6 +357,27 @@ def doctor_cmd(
         )
 
 
+def _is_code_logic_exception(error_text: str, category: str) -> bool:
+    """Check if the error matches known language-specific code-logic error patterns."""
+    cat = category.lower()
+    
+    if cat == "python":
+        return bool(re.search(r'(NameError|SyntaxError|IndentationError|AttributeError|TypeError):', error_text))
+    elif cat in ("node", "javascript", "js", "typescript", "ts"):
+        # Explicitly exclude environment issues (missing modules, missing files)
+        if re.search(r"(Cannot find module|MODULE_NOT_FOUND|ENOENT)", error_text):
+            return False
+        return bool(re.search(r'(ReferenceError|SyntaxError|TypeError):', error_text))
+    elif cat == "rust":
+        return bool(re.search(r'error\[E[0-9]+\]: cannot find (value|function) .* in this scope|expected .*, found .*', error_text))
+    elif cat == "java":
+        return bool(re.search(r'error: cannot find symbol|java\.lang\.NullPointerException', error_text))
+    elif cat == "go":
+        return bool(re.search(r'undefined: .*|.* declared and not used', error_text))
+        
+    return False
+
+
 @app.command(
     context_settings={"ignore_unknown_options": True, "allow_extra_args": True},
 )
@@ -354,6 +402,11 @@ def run(
         False,
         "--no-cache",
         help="Bypass the local cache and force a new AI diagnosis.",
+    ),
+    danger_override: bool = typer.Option(
+        False,
+        "--danger-override",
+        help="Bypass the git safety halt when outside a repository.",
     ),
 ) -> None:
     """
@@ -408,7 +461,7 @@ def run(
         return
 
     # ── Step 2: Command failed — show the error ───────────────────────────
-    error_text = redact_secrets(stderr.strip() or stdout.strip() or "(no output captured)")
+    error_text, secrets_count1 = redact_secrets_with_count(stderr.strip() or stdout.strip() or "(no output captured)")
     console.print(
         Panel(
             error_text,
@@ -433,6 +486,8 @@ def run(
         cache_hit = None
     
     source = provider
+    classification = "UNKNOWN"
+    mismatch_flagged = False
 
     if cache_hit:
         if cache_hit.previously_worked:
@@ -478,6 +533,9 @@ def run(
             # ── Step 4a: Ask the LLM ─────────────────────────────────────────
             provider_name = provider.capitalize()
             display_model = get_actual_model(model, provider)
+            
+            _print_ollama_warning_if_needed(provider, display_model)
+            
             console.print(
                 f"\n[bold yellow][AI] Asking {provider_name} ({display_model}) for a diagnosis...[/bold yellow]"
             )
@@ -494,7 +552,10 @@ def run(
                     provider=provider,
                 )
             except RuntimeError as exc:
-                console.print(f"\n[bold red]Error reaching {provider_name}:[/bold red] {exc}")
+                if str(exc).startswith("[!]"):
+                    console.print(f"\n[bold red]{exc}[/bold red]")
+                else:
+                    console.print(f"\n[bold red]Error reaching {provider_name}:[/bold red] {exc}")
                 raise typer.Exit(code=1)
     
             if not result.parsed_ok:
@@ -507,6 +568,7 @@ def run(
                 )
                 log_attempt(
                     original_command=redact_secrets(cmd),
+                    redacted_secrets_count=locals().get('secrets_count1', 0) + locals().get('secrets_count2', 0),
                     error_text=error_text,
                     diagnosis=result.diagnosis,
                     fix_command=result.fix,
@@ -516,20 +578,33 @@ def run(
                     category=category,
                     context_included=code_context is not None,
                     provider=provider,
+                    classification=result.classification,
+                    mismatch_flagged=result.mismatch_flagged,
                 )
                 raise typer.Exit(code=1)
     
             diagnosis = result.diagnosis
             fix = result.fix
-            _show_fix_panel(diagnosis, fix, source)
+            classification = result.classification
+            mismatch_flagged = False
+
+            if _is_code_logic_exception(error_text, category):
+                if classification != "CODE_ISSUE" or fix != "NONE":
+                    mismatch_flagged = True
+                    result.mismatch_flagged = True
+                    console.print("\n[bold yellow]⚠ This suggested fix may not address the actual error type — review before running[/bold yellow]")
+
+            if fix != "NONE":
+                _show_fix_panel(diagnosis, fix, source)
 
     # ── Step 4b: Dry-run preview ──────────────────────────────────────────
-    if fix.strip() == "None (Code change required)":
-        console.print("\n[bold yellow][Warning] This appears to be a logic error in your code, not an environment issue.[/bold yellow]")
-        console.print("[dim]envfix only applies shell command fixes. Please manually edit the code as per the diagnosis.[/dim]")
+    if fix.strip() == "NONE":
+        console.print("\n[bold yellow][Code Issue] This looks like a bug in your code, not an environment problem:[/bold yellow]")
+        console.print(f"[dim]{diagnosis}[/dim]")
         
         log_attempt(
             original_command=redact_secrets(cmd),
+        redacted_secrets_count=locals().get('secrets_count1', 0) + locals().get('secrets_count2', 0),
             error_text=error_text,
             diagnosis=diagnosis,
             fix_command=fix,
@@ -539,6 +614,8 @@ def run(
             category=category,
             context_included=code_context is not None,
             provider=provider,
+            classification=classification,
+            mismatch_flagged=mismatch_flagged,
         )
         raise typer.Exit(code=1)
 
@@ -563,6 +640,7 @@ def run(
         console.print("[dim]Exiting without changes.[/dim]")
         log_attempt(
             original_command=redact_secrets(cmd),
+        redacted_secrets_count=locals().get('secrets_count1', 0) + locals().get('secrets_count2', 0),
             error_text=error_text,
             diagnosis=diagnosis,
             fix_command=fix,
@@ -572,17 +650,26 @@ def run(
             category=category,
             context_included=code_context is not None,
             provider=provider,
+            classification=classification,
+            mismatch_flagged=mismatch_flagged,
         )
         raise typer.Exit(code=0)
 
     # ── Git Safety Backup ──────────────────────────────────────────────────
     stash_created = False
     if not is_in_git_repo():
-        console.print(
-            "[bold yellow]Warning: not in a git repository. envfix cannot create "
-            "a safety backup before applying fixes. Consider running 'git init' "
-            "for safety.[/bold yellow]\n"
-        )
+        if not danger_override:
+            console.print(
+                "[bold red]Safety halt: You are not in a Git repository. envfix cannot "
+                "guarantee safe rollbacks here. Commit your work to git first, or "
+                "run with --danger-override to proceed anyway.[/bold red]\n"
+            )
+            raise typer.Exit(code=1)
+        else:
+            console.print(
+                "[bold yellow]Warning: not in a git repository. envfix cannot create "
+                "a safety backup before applying fixes. Proceeding via --danger-override.[/bold yellow]\n"
+            )
     elif has_uncommitted_changes():
         if create_safety_stash():
             stash_created = True
@@ -603,6 +690,7 @@ def run(
         )
         log_attempt(
             original_command=redact_secrets(cmd),
+            redacted_secrets_count=locals().get('secrets_count1', 0) + locals().get('secrets_count2', 0),
             error_text=error_text,
             diagnosis=diagnosis,
             fix_command=fix,
@@ -612,6 +700,8 @@ def run(
             category=category,
             context_included=code_context is not None,
             provider=provider,
+            classification=classification,
+            mismatch_flagged=mismatch_flagged,
         )
         raise typer.Exit(code=1)
 
@@ -674,6 +764,7 @@ def run(
     # ── Step 8: Log everything ────────────────────────────────────────────
     log_attempt(
         original_command=redact_secrets(cmd),
+        redacted_secrets_count=locals().get('secrets_count1', 0) + locals().get('secrets_count2', 0),
         error_text=error_text,
         diagnosis=diagnosis,
         fix_command=fix,
@@ -683,6 +774,8 @@ def run(
         category=category,
         context_included=code_context is not None,
         provider=provider,
+        classification=classification,
+        mismatch_flagged=mismatch_flagged,
     )
     console.print(f"\n[dim][Log] Attempt logged to {get_log_file()}[/dim]")
     
@@ -752,7 +845,7 @@ def diagnose_cmd(
         raise typer.Exit(code=1)
 
     with open(log_file, "r", encoding="utf-8", errors="replace") as f:
-        error_text = redact_secrets(f.read().strip())
+        error_text, secrets_count1 = redact_secrets_with_count(f.read().strip())
         
     if not error_text:
         console.print("[bold red]Error:[/bold red] Log file is empty.")
@@ -791,6 +884,10 @@ def diagnose_cmd(
         source_tag = f" (from cache - {cache_hit.score:.0%} match)"
     else:
         try:
+            display_model = get_actual_model(model, provider)
+            if not ci:
+                _print_ollama_warning_if_needed(provider, display_model)
+
             trimmed_error = trim_stack_trace(
                 error_text,
                 ignore_patterns=config.get("ignore_patterns", [])
@@ -808,7 +905,10 @@ def diagnose_cmd(
             if ci:
                 print(f"**envfix encountered an error:** {exc}")
             else:
-                console.print(f"[bold red]Error reaching {provider}:[/bold red] {exc}")
+                if str(exc).startswith("[!]"):
+                    console.print(f"[bold red]{exc}[/bold red]")
+                else:
+                    console.print(f"[bold red]Error reaching {provider}:[/bold red] {exc}")
             raise typer.Exit(code=1)
             
     if ci:
@@ -993,6 +1093,220 @@ def stats_cmd() -> None:
     table.add_row("Safety Backups Created", str(stash_count))
     
     console.print(table)
+
+
+def _detect_project_category(cwd: str) -> str:
+    """Detect the project ecosystem based on telltale files."""
+    if os.path.exists(os.path.join(cwd, "requirements.txt")) or os.path.exists(os.path.join(cwd, "pyproject.toml")):
+        return "python"
+    elif os.path.exists(os.path.join(cwd, "package.json")):
+        return "node"
+    elif os.path.exists(os.path.join(cwd, "Cargo.toml")):
+        return "rust"
+    elif os.path.exists(os.path.join(cwd, "go.mod")):
+        return "go"
+    elif os.path.exists(os.path.join(cwd, "pom.xml")) or os.path.exists(os.path.join(cwd, "build.gradle")):
+        return "java"
+    return "unknown"
+
+
+@app.command("setup")
+def setup_cmd() -> None:
+    """Setup a working dev environment, including VS Code configuration."""
+    import json
+    cwd = os.getcwd()
+    category = _detect_project_category(cwd)
+    
+    console.print(f"\n[bold cyan]envfix Setup[/bold cyan]")
+    console.print(f"Detected project type: [bold]{category}[/bold]\n")
+    
+    actions_taken = []
+    
+    # 1. Python Venv creation
+    if category == "python":
+        venv_path = os.path.join(cwd, ".venv")
+        if not os.path.exists(venv_path) and not os.path.exists(os.path.join(cwd, "venv")):
+            if Confirm.ask("[bold]No virtual environment found. Create one (.venv)?[/bold]", default=True):
+                console.print("[dim]Creating virtual environment...[/dim]")
+                import subprocess
+                res = subprocess.run(["python", "-m", "venv", ".venv"], capture_output=True)
+                if res.returncode == 0:
+                    actions_taken.append("Created Python virtual environment in .venv/")
+                    if os.name == "nt":
+                        activate_cmd = ".venv\\Scripts\\activate"
+                    else:
+                        activate_cmd = "source .venv/bin/activate"
+                    actions_taken.append(f"To activate manually: {activate_cmd}")
+                else:
+                    console.print("[bold red]Failed to create virtual environment.[/bold red]")
+        else:
+            console.print("[dim]Virtual environment already exists.[/dim]")
+            
+    # 2. VS Code settings and extensions
+    vscode_dir = os.path.join(cwd, ".vscode")
+    os.makedirs(vscode_dir, exist_ok=True)
+    
+    # settings.json
+    settings_path = os.path.join(vscode_dir, "settings.json")
+    settings = {}
+    if os.path.exists(settings_path):
+        try:
+            with open(settings_path, "r", encoding="utf-8") as f:
+                settings = json.load(f)
+        except Exception:
+            settings = {}
+            
+    settings_modified = False
+    if category == "python":
+        if os.name == "nt":
+            python_path = r"${workspaceFolder}\.venv\Scripts\python.exe"
+        else:
+            python_path = "${workspaceFolder}/.venv/bin/python"
+            
+        if settings.get("python.defaultInterpreterPath") != python_path:
+            settings["python.defaultInterpreterPath"] = python_path
+            settings_modified = True
+            
+    if settings_modified:
+        with open(settings_path, "w", encoding="utf-8") as f:
+            json.dump(settings, f, indent=4)
+        actions_taken.append("Updated .vscode/settings.json with appropriate interpreter path")
+        
+    # extensions.json
+    extensions_path = os.path.join(vscode_dir, "extensions.json")
+    extensions = {}
+    if os.path.exists(extensions_path):
+        try:
+            with open(extensions_path, "r", encoding="utf-8") as f:
+                extensions = json.load(f)
+        except Exception:
+            extensions = {}
+            
+    recs = extensions.get("recommendations", [])
+    ext_modified = False
+    
+    ext_map = {
+        "python": "ms-python.python",
+        "node": "dbaeumer.vscode-eslint",
+        "rust": "rust-lang.rust-analyzer",
+        "go": "golang.go",
+        "java": "vscjava.vscode-java-pack"
+    }
+    
+    recommended_ext = ext_map.get(category)
+    if recommended_ext and recommended_ext not in recs:
+        recs.append(recommended_ext)
+        extensions["recommendations"] = recs
+        ext_modified = True
+        
+    if ext_modified:
+        with open(extensions_path, "w", encoding="utf-8") as f:
+            json.dump(extensions, f, indent=4)
+        actions_taken.append(f"Added {recommended_ext} to .vscode/extensions.json")
+        
+    if not actions_taken:
+        console.print("[green]Environment is already set up. Nothing to do![/green]")
+        return
+        
+    console.print("\n[bold green]Setup Summary:[/bold green]")
+    step = 1
+    for action in actions_taken:
+        if action.startswith("To activate manually:"):
+            console.print(f"   [dim]{action}[/dim]")
+        else:
+            console.print(f"{step}. {action}")
+            step += 1
+            
+    if category == "python":
+        console.print("\n[bold yellow]Next steps:[/bold yellow]")
+        console.print("- Reload your VS Code window (Ctrl+Shift+P -> Developer: Reload Window) to pick up the new interpreter.")
+        if any("activate" in a for a in actions_taken):
+            console.print("- Activate your virtual environment in your terminal before running commands.")
+
+
+@app.command("index")
+def index_cmd(
+    path: str = typer.Argument(
+        ".",
+        help="Directory to index (defaults to current directory)",
+    ),
+    update: bool = typer.Option(
+        False,
+        "--update",
+        help="Only re-index changed files rather than rebuilding from scratch",
+    ),
+) -> None:
+    """Build a local vector index of the codebase for context retrieval."""
+    try:
+        from envfix.indexer import build_index
+    except ImportError as e:
+        console.print(f"[bold red]Failed to load indexer module: {e}[/bold red]")
+        raise typer.Exit(code=1)
+        
+    try:
+        build_index(path=path, update=update)
+    except Exception as e:
+        console.print(f"[bold red]Indexing failed: {e}[/bold red]")
+        raise typer.Exit(code=1)
+
+@app.command("share")
+def share_cmd(
+    error_index: int = typer.Argument(0, help="The index of the error to share (0 is the most recent)."),
+) -> None:
+    """
+    Generate a bug_report.md from a recent error to share with a mentor or teammate.
+    """
+    import platform
+    import sys
+    from datetime import datetime
+    
+    from envfix.logger import get_history
+    from envfix.context import extract_context
+    from envfix.redact import redact_secrets
+
+    history = get_history()
+    if not history:
+        console.print("[yellow]No errors found in your envfix log.[/yellow]")
+        raise typer.Exit(code=1)
+
+    if error_index >= len(history) or error_index < 0:
+        console.print(f"[red]Invalid index {error_index}. You only have {len(history)} recorded errors.[/red]")
+        raise typer.Exit(code=1)
+
+    entry = history[error_index]
+    
+    # Redact secrets
+    error_text = redact_secrets(entry.get("error_text", ""))
+    original_command = redact_secrets(entry.get("original_command", ""))
+    diagnosis = entry.get("diagnosis", "")
+    fix = entry.get("fix_command", "")
+    timestamp = entry.get("timestamp", datetime.now().isoformat())
+    
+    code_context = extract_context(error_text)
+    
+    report = f"# Envfix Bug Report\n\n"
+    report += f"**Timestamp:** {timestamp}\n"
+    report += f"**OS:** {platform.system()} {platform.version()}\n"
+    report += f"**Python Version:** {sys.version.split()[0]}\n\n"
+    
+    report += f"## Command\n```bash\n{original_command}\n```\n\n"
+    report += f"## Error Output\n```text\n{error_text}\n```\n\n"
+    
+    if code_context:
+        report += f"## Relevant Code (`{code_context.filepath}`, lines {code_context.start_line}-{code_context.end_line})\n"
+        snippet = redact_secrets(code_context.snippet)
+        report += f"```python\n{snippet}\n```\n\n"
+        
+    if diagnosis:
+        report += f"## AI Diagnosis\n{diagnosis}\n\n"
+        if fix and fix != "NONE":
+            report += f"**Suggested Fix:**\n```bash\n{fix}\n```\n"
+            report += f"**Did it work?:** {entry.get('fix_worked', 'Unknown')}\n\n"
+            
+    with open("bug_report.md", "w", encoding="utf-8") as f:
+        f.write(report)
+        
+    console.print(f"\n[green]Success! Bug report saved to bug_report.md - share this with a teammate or mentor.[/green]\n")
 
 
 def main() -> None:  # pragma: no cover

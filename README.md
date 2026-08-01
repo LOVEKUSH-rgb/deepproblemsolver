@@ -1,4 +1,5 @@
 # envfix 🛠️
+[![Tests](https://github.com/LOVEKUSH-rgb/deepproblemsolver/actions/workflows/tests.yml/badge.svg)](https://github.com/LOVEKUSH-rgb/deepproblemsolver/actions/workflows/tests.yml)
 
 > **`envfix` wraps any failing shell command, asks a local AI model what went wrong, and proposes a one-click fix — fully offline, no API key, no cloud.**
 
@@ -340,23 +341,38 @@ Any detected secrets are replaced with placeholders like `[REDACTED:AWS_KEY]`.
 
 ## Known limitations
 
-- **Model quality varies.** `envfix` is only as good as the local model you
-  pull. Smaller models (`qwen2.5:3b`, `llama3.2:3b`) sometimes produce vague
-  or wrong diagnoses for complex errors. `llama3.1:8b` is the recommended
-  minimum.
-- **Works best for common errors.** Highly project-specific errors (e.g. a bug
-  in your custom C extension) will likely produce generic suggestions.
-- **Windows path assumptions.** The tool normalises `pip install` →
-  `python -m pip install` because `pip` is often not on the Windows PATH. On
-  macOS/Linux both forms work but the normalisation is harmless.
-- **Single fix per failure.** `envfix` proposes one fix at a time. If the
-  first fix doesn't work, run `envfix run <cmd>` again — the model may suggest
-  something different.
-- **Needs Ollama running.** If `ollama serve` is not active, `envfix` exits
-  with a clear error message rather than a cryptic timeout.
-- **Still early.** Prompt engineering and cache fuzzy-matching were tuned for
-  Python/ML and Node errors. Other ecosystems (Rust, Docker, CMake …) will
-  work but with less accuracy.
+- **Model quality varies.** envfix is only as good as the model 
+  behind it. Smaller local models (`qwen2.5:3b`, `llama3.2:3b`) 
+  sometimes produce vague or incorrect diagnoses for complex errors 
+  — envfix now warns you when a small model is selected. 
+  `llama3.1:8b` is the recommended local minimum; a cloud provider 
+  (Groq, Gemini) will generally be more reliable for tricky cases.
+
+- **Project-specific errors are more accurate with indexing.** Run 
+  `envfix index` once in your project root and envfix will pull in 
+  relevant snippets from your own codebase when diagnosing errors, 
+  not just generic patterns. Without an index — or for very obscure 
+  issues (e.g. a bug inside a custom C extension) — suggestions will 
+  be more generic.
+
+- **Code bugs vs. environment issues.** envfix classifies errors as 
+  either environment/dependency issues (fixable with a command) or 
+  code-logic bugs (a typo, undefined variable, etc. — not fixable 
+  by any terminal command). For Python and Node.js, this 
+  classification is backed by a pattern-matching safety net in 
+  addition to the AI's own judgment; for Rust, Go, and Java it 
+  currently relies on the AI's classification alone.
+
+- **Single fix per failure.** envfix proposes one fix at a time. If 
+  it doesn't work, run `envfix run <cmd>` again — the model may 
+  suggest something different on a second attempt.
+
+- **Still early for some ecosystems.** Prompt tuning and the 
+  fuzzy-match cache were built and tested primarily against Python 
+  and Node.js errors. Rust, Go, Java, and Docker error detection is 
+  implemented but has not yet been verified against real errors in 
+  those ecosystems — treat it as early and unproven until tested 
+  further.
 
 ---
 

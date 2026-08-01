@@ -2,6 +2,7 @@ import os
 import sys
 from pathlib import Path
 from typing import Dict, Any
+import uuid
 
 import typer
 import yaml
@@ -29,6 +30,10 @@ def load_config() -> Dict[str, Any]:
             global_config = tomllib.load(f)
     except Exception:
         global_config = {}
+
+    if "installation_id" not in global_config:
+        global_config["installation_id"] = str(uuid.uuid4())
+        save_config(global_config)
 
     project_config = load_project_config()
     

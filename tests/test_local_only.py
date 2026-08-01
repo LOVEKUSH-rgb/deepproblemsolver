@@ -39,9 +39,12 @@ def test_local_only_mode_blocks_telemetry(mock_post):
         with open("dummy_log.txt", "w") as f:
             f.write("Some fake traceback")
             
-        result = runner.invoke(app, ["diagnose", "dummy_log.txt", "--ci"])
-        
-        assert result.exit_code == 0
+        with mock.patch("envfix.main.find_cached_fix", return_value=None), \
+             mock.patch("envfix.indexer.query_index", return_value=[]), \
+             mock.patch("envfix.logger.get_embedding", return_value=[0.1]*384):
+            result = runner.invoke(app, ["diagnose", "dummy_log.txt", "--ci"], catch_exceptions=False)
+            
+        assert result.exit_code == 0, f"Failed with {result.exception}"
         assert mock_post.called == False, "Telemetry was sent despite local_only=True!"
 
 @mock.patch("envfix.runner.run_command")

@@ -29,6 +29,11 @@ class OllamaProvider(AIProvider):
             )
             return response["message"]["content"].strip()
         except Exception as exc:
+            if "connect" in str(exc).lower():
+                raise RuntimeError(
+                    "[!] Could not connect to local Ollama server. Make sure Ollama "
+                    "is running (run 'ollama serve' in another terminal)."
+                ) from exc
             raise RuntimeError(
                 f"Ollama request failed: {exc}\n"
                 "Make sure the Ollama service is running (`ollama serve`) "

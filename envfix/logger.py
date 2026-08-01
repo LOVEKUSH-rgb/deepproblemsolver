@@ -44,6 +44,9 @@ def log_attempt(
     context_included: bool = False,
     provider: str = "ollama",
     entry_type: str = "reactive_fix",
+    redacted_secrets_count: int = 0,
+    classification: str = "UNKNOWN",
+    mismatch_flagged: bool = False,
 ) -> None:
     """
     Append one attempt record to the user's personal log file.
@@ -61,7 +64,9 @@ def log_attempt(
       "source":           "ollama" | "cache",
       "category":         ecosystem category (e.g. "python", "node", "general"),
       "context_included": whether a code snippet was injected into the prompt,
-      "provider":         the AI provider used (e.g., "ollama", "groq", "gemini")
+      "provider":         the AI provider used (e.g., "ollama", "groq", "gemini"),
+      "classification":   error classification (ENVIRONMENT_ISSUE vs CODE_ISSUE),
+      "mismatch_flagged": true if a fix was given for a code-logic error
     }
 
     Args:
@@ -89,6 +94,8 @@ def log_attempt(
         "category":         category,
         "context_included": context_included,
         "provider":         provider,
+        "classification":   classification,
+        "mismatch_flagged": mismatch_flagged,
     }
     
     # Optionally compute and store a semantic embedding of the error text
@@ -117,7 +124,8 @@ def log_attempt(
             provider_used=provider or "unknown",
             was_cache_hit=(source == "cache"),
             fix_applied=user_approved,
-            fix_worked=fix_worked
+            fix_worked=fix_worked,
+            redacted_secrets_count=redacted_secrets_count
         )
 
 

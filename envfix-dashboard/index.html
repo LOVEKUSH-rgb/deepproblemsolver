@@ -492,20 +492,60 @@
     <div id="auth-modal">
         <div class="modal-content glass">
             <h2>Connect Dashboard</h2>
-            <p>Enter your team details to view envfix analytics.</p>
-            
-            <div class="input-group">
-                <label>Team ID</label>
-                <input type="text" id="teamIdInput" placeholder="e.g. 1" />
+            <div style="display: flex; gap: 10px; margin-bottom: 20px;">
+                <button id="tab-team" class="btn-primary" style="flex:1;" onclick="setMode('team')">Team View</button>
+                <button id="tab-org" class="btn-primary" style="flex:1; background: transparent; border: 1px solid var(--card-border);" onclick="setMode('org')">Org View</button>
             </div>
-            <div class="input-group">
-                <label>API Key</label>
-                <input type="password" id="apiKeyInput" placeholder="8d6bc28c-..." />
+            
+            <div id="auth-team-fields">
+                <p>Enter your team details.</p>
+                <div class="input-group">
+                    <label>Team ID</label>
+                    <input type="text" id="teamIdInput" placeholder="e.g. 1" />
+                </div>
+                <div class="input-group">
+                    <label>Team API Key</label>
+                    <input type="password" id="apiKeyInput" placeholder="8d6bc28c-..." />
+                </div>
+            </div>
+
+            <div id="auth-org-fields" style="display: none;">
+                <p>Enter your organization details.</p>
+                <p style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 1rem;">
+                    Enterprise View is read-only, aggregate-only, and privacy-preserving. No individual developers are tracked.
+                </p>
+                <div class="input-group">
+                    <label>Org ID</label>
+                    <input type="text" id="orgIdInput" placeholder="e.g. 1" />
+                </div>
+                <div class="input-group">
+                    <label>Admin API Key</label>
+                    <input type="password" id="orgApiKeyInput" placeholder="admin-key-..." />
+                </div>
             </div>
             
             <button class="btn-primary" onclick="saveAuthAndLoad()">View Dashboard</button>
         </div>
     </div>
+    
+    <script>
+    let authMode = 'team';
+    function setMode(mode) {
+        authMode = mode;
+        if (mode === 'team') {
+            document.getElementById('tab-team').style.background = 'var(--accent-gradient)';
+            document.getElementById('tab-org').style.background = 'transparent';
+            document.getElementById('auth-team-fields').style.display = 'block';
+            document.getElementById('auth-org-fields').style.display = 'none';
+        } else {
+            document.getElementById('tab-org').style.background = 'var(--accent-gradient)';
+            document.getElementById('tab-team').style.background = 'transparent';
+            document.getElementById('auth-team-fields').style.display = 'none';
+            document.getElementById('auth-org-fields').style.display = 'block';
+        }
+    }
+    </script>
+
 
     <!-- Main App -->
     <div class="container">
@@ -589,6 +629,59 @@
                 </div>
             </div>
         </div>
+
+        <!-- Org Dashboard Content -->
+        <div id="org-dashboard-content" style="display: none;">
+            <div class="savings-section glass" style="margin-bottom: 2rem;">
+                <div class="savings-grid">
+                    <div class="savings-metric">
+                        <h3>Estimated Org-wide Dollars Saved</h3>
+                        <p id="org-val-dollars">$0</p>
+                    </div>
+                    <div class="savings-metric">
+                        <h3>Estimated Org-wide Hours Saved</h3>
+                        <p id="org-val-hours">0</p>
+                    </div>
+                </div>
+            </div>
+
+            <div class="metrics-grid">
+                <div class="metric-card glass">
+                    <div class="metric-title">Total Developers/Machines Reporting</div>
+                    <div class="metric-value" id="org-val-machines">0</div>
+                </div>
+                <div class="metric-card glass">
+                    <div class="metric-title">Redacted Secrets Count</div>
+                    <div class="metric-value" id="org-val-secrets" style="color: var(--danger);">0</div>
+                </div>
+            </div>
+            
+            <div class="accuracy-section glass" style="margin-top: 2rem;">
+                <h3>Proactive Environment Health (Doctor Scans)</h3>
+                <div id="org-doctor-health" style="margin-top: 1rem; color: var(--text-muted);">
+                    <!-- Populated by JS -->
+                </div>
+            </div>
+
+            <div class="chart-section glass" style="margin-top: 2rem;">
+                <h3>Team Breakdown</h3>
+                <table style="width: 100%; text-align: left; margin-top: 1rem; border-collapse: collapse;">
+                    <thead>
+                        <tr style="border-bottom: 1px solid var(--card-border);">
+                            <th style="padding: 10px;">Team ID</th>
+                            <th style="padding: 10px;">Name</th>
+                            <th style="padding: 10px;">Total Events</th>
+                            <th style="padding: 10px;">Success Rate</th>
+                            <th style="padding: 10px;">Dollars Saved</th>
+                        </tr>
+                    </thead>
+                    <tbody id="org-team-breakdown">
+                        <!-- Populated by JS -->
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
     </div>
 
     <script>

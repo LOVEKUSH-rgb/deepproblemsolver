@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "envfix"
-version = "0.5.1"
+version = "0.5.2"
 description = "CLI tool that diagnoses and auto-fixes Python/ML environment errors using a local LLM."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -29,6 +29,7 @@ dependencies = [
     "tomli>=2.0.1; python_version < '3.11'",
     "tomli-w>=1.0.0",
     "pyyaml>=6.0",
+    "chromadb>=0.4.0",
 ]
 
 [project.optional-dependencies]
