@@ -231,6 +231,12 @@ Type 'yes' to run this fix (no):
 | `envfix run <cmd> --provider <name>` | Select AI provider (`ollama` [default], `groq`, `gemini`) |
 | `envfix run <cmd> --model <tag>` | Use a specific model tag/name for the chosen provider |
 | `envfix run <cmd> --category <eco>` | Hint the ecosystem (`python`, `node`, `docker` …) |
+| `envfix doctor` | Verify system requirements and AI provider connectivity |
+| `envfix index` | Build a local RAG index of your codebase to improve diagnostics |
+| `envfix hook install` | Install a pre-commit hook for instant local syntax checking |
+| `envfix share` | Generate a shareable `bug_report.md` from a recent error |
+| `envfix setup` | Interactive wizard to configure telemetry and cloud API keys |
+| `envfix config` | View your current envfix configuration settings |
 | `envfix history` | Show the last 20 attempts |
 | `envfix history --last N` | Show last N attempts |
 

@@ -36,9 +36,9 @@ def test_chunk_generic_file():
 
 @mock.patch("envfix.indexer._get_files_to_index")
 @mock.patch("envfix.indexer._update_gitignore")
-@mock.patch("envfix.indexer.chromadb")
+@mock.patch("chromadb.PersistentClient")
 @mock.patch("envfix.indexer.get_embedding")
-def test_build_index(mock_get_embedding, mock_chromadb, mock_update_gitignore, mock_get_files, tmp_path):
+def test_build_index(mock_get_embedding, mock_persistent_client, mock_update_gitignore, mock_get_files, tmp_path):
     mock_get_files.return_value = (["fake_file.py", "fake_file.txt"], 0, 0)
     mock_get_embedding.return_value = [0.1] * 384
     
@@ -49,7 +49,7 @@ def test_build_index(mock_get_embedding, mock_chromadb, mock_update_gitignore, m
         f.write("line\n" * 60)
         
     mock_client = mock.MagicMock()
-    mock_chromadb.PersistentClient.return_value = mock_client
+    mock_persistent_client.return_value = mock_client
     mock_collection = mock.MagicMock()
     mock_client.get_or_create_collection.return_value = mock_collection
     
@@ -70,15 +70,15 @@ def test_build_index(mock_get_embedding, mock_chromadb, mock_update_gitignore, m
     os.remove("fake_file.py")
     os.remove("fake_file.txt")
 
-@mock.patch("envfix.indexer.chromadb")
+@mock.patch("chromadb.PersistentClient")
 @mock.patch("envfix.indexer.get_embedding")
 @mock.patch("envfix.indexer.os.path.exists")
-def test_query_index(mock_exists, mock_get_embedding, mock_chromadb):
+def test_query_index(mock_exists, mock_get_embedding, mock_persistent_client):
     mock_exists.return_value = True
     mock_get_embedding.return_value = [0.1] * 384
     
     mock_client = mock.MagicMock()
-    mock_chromadb.PersistentClient.return_value = mock_client
+    mock_persistent_client.return_value = mock_client
     mock_collection = mock.MagicMock()
     mock_client.get_collection.return_value = mock_collection
     

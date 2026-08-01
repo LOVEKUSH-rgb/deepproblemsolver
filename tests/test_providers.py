@@ -21,7 +21,7 @@ class TestGeminiProvider:
             
         assert "GEMINI_API_KEY environment variable is not set" in str(exc_info.value)
 
-    @patch("envfix.providers.gemini._genai.Client")
+    @patch("google.genai.Client")
     def test_successful_mocked_call(self, mock_client_class, monkeypatch):
         monkeypatch.setenv("GEMINI_API_KEY", "fake_key")
         
@@ -50,7 +50,7 @@ class TestGroqProvider:
             
         assert "GROQ_API_KEY environment variable is not set" in str(exc_info.value)
 
-    @patch("envfix.providers.groq._groq.Groq")
+    @patch("groq.Groq")
     def test_successful_mocked_call(self, mock_groq_class, monkeypatch):
         monkeypatch.setenv("GROQ_API_KEY", "fake_groq_key")
         
@@ -72,7 +72,7 @@ class TestGroqProvider:
 
 class TestOllamaProvider:
 
-    @patch("envfix.providers.ollama._ollama.chat")
+    @patch("ollama.chat")
     def test_successful_mocked_call(self, mock_chat):
         # Ollama doesn't require an API key by default
         mock_chat.return_value = {

@@ -9,16 +9,16 @@ from envfix.preview import is_destructive
 
 def test_ai_prompt_includes_category():
     """Test that the category is correctly interpolated into the prompt."""
-    with patch("envfix.providers.ollama._ollama") as mock_ollama, \
+    with patch("ollama.chat") as mock_ollama_chat, \
          patch("envfix.indexer.query_index", return_value=[]):
-        mock_ollama.chat.return_value = {
+        mock_ollama_chat.return_value = {
             "message": {"content": "DIAGNOSIS: bad\nFIX: echo ok"}
         }
         
         get_diagnosis("some error", category="node")
         
         # Check what was passed to ollama
-        call_args = mock_ollama.chat.call_args[1]
+        call_args = mock_ollama_chat.call_args[1]
         messages = call_args["messages"]
         prompt = messages[0]["content"]
         
