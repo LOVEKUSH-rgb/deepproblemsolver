@@ -40,7 +40,6 @@ from envfix.ai import get_doctor_fix
 app = typer.Typer(
     name="envfix",
     help="Diagnose and auto-fix Python/ML environment errors using a local LLM.",
-    add_completion=False,
 )
 
 console = Console()
@@ -1310,7 +1309,17 @@ def share_cmd(
 
 
 def main() -> None:  # pragma: no cover
-    app()
+    from envfix.update import start_update_check, print_update_message_if_available
+    import sys
+    
+    start_update_check()
+    try:
+        app()
+    except SystemExit as e:
+        print_update_message_if_available()
+        sys.exit(e.code)
+    else:
+        print_update_message_if_available()
 
 
 if __name__ == "__main__":  # pragma: no cover

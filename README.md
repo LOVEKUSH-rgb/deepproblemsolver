@@ -114,9 +114,19 @@ Verify the install:
 envfix --help
 ```
 
+### Enable Shell Tab Completion
+
+`envfix` supports tab completion for all common shells (bash, zsh, fish, PowerShell). To enable it, run:
+
+```bash
+envfix --install-completion
+```
+
+*Note: After running this command, you must restart your terminal or open a new tab for the completion to take effect. If you are using Windows/PowerShell, completion may have limited support depending on your execution policies.*
+
 ---
 
-## Usage
+## 🚀 Quick start
 
 ```
 envfix run <your failing command>
