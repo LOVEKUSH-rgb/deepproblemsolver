@@ -13,14 +13,33 @@ def get_embedding(text: str) -> Optional[List[float]]:
     Generate an embedding for the given text using all-MiniLM-L6-v2.
     Returns None if sentence-transformers is not installed.
     """
-    try:
-        from sentence_transformers import SentenceTransformer
-    except ImportError:
-        return None
-
     global _model
     if _model is None:
-        _model = SentenceTransformer("all-MiniLM-L6-v2")
+        import os
+        original_offline = os.environ.get("HF_HUB_OFFLINE")
+        
+        def set_offline(val: bool):
+            if val:
+                os.environ["HF_HUB_OFFLINE"] = "1"
+            else:
+                if original_offline is None:
+                    os.environ.pop("HF_HUB_OFFLINE", None)
+                else:
+                    os.environ["HF_HUB_OFFLINE"] = original_offline
+
+        set_offline(True)
+        try:
+            from sentence_transformers import SentenceTransformer
+            _model = SentenceTransformer("all-MiniLM-L6-v2")
+        except ImportError:
+            set_offline(False)
+            return None
+        except Exception:
+            set_offline(False)
+            from sentence_transformers import SentenceTransformer
+            _model = SentenceTransformer("all-MiniLM-L6-v2")
+        finally:
+            set_offline(False)
 
     # Encode returns a numpy array or tensor, convert to standard Python floats for JSON serialization
     embedding = _model.encode(text)

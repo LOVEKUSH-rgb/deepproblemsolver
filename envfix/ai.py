@@ -25,7 +25,7 @@ PROMPT_TEMPLATE = (
     "You are a friendly, expert debugging assistant.\n"
     "When you detect a CODE_ISSUE (like a SyntaxError, TypeError, or IndentationError), the DIAGNOSIS field MUST follow this structure:\n"
     "1. THE TRANSLATION: Explain the error in 1-2 sentences of extremely simple, plain English, naming the exact line number. Example: 'You forgot to put a closing parenthesis ) at the end of line 42.'\n"
-    "2. CORRECTED CODE: Show the exact corrected line or code block as plain text within the diagnosis (not as the FIX field, since the actual FIX field must remain NONE for code issues per the existing rule).\n\n"
+    "2. CORRECTED CODE: The CORRECTED CODE section must contain the actual fixed line(s) of code as a code block, not a description. For example, for a NameError caused by an undefined bare word that looks like it was meant to be a string, prefer the most likely interpretation (a missing quote typo) over a less likely one (an intentionally undefined variable), unless context clearly suggests otherwise.\n\n"
     "Never use jargon like 'unexpected EOF while parsing' or 'invalid syntax' without immediately translating it into plain language in the same sentence.\n\n"
     "Continue to follow the existing DIAGNOSIS/FIX response format exactly — DIAGNOSIS contains this translation + fix explanation, FIX remains NONE for code-logic issues as already implemented.\n\n"
     "Respond in this exact format:\n"
@@ -42,8 +42,8 @@ PROMPT_TEMPLATE = (
     "FIX: python -m pip install torch\n\n"
     "Example correct format for CODE_ISSUE:\n"
     "CLASSIFICATION: CODE_ISSUE\n"
-    "DIAGNOSIS: 1. THE TRANSLATION: You forgot to put a closing parenthesis ) at the end of line 42.\n"
-    "2. CORRECTED CODE: print('Hello')\n"
+    "DIAGNOSIS: 1. THE TRANSLATION: You likely meant to print the text 'hi', but forgot the quotes.\n"
+    "2. CORRECTED CODE: print(\"hi\")\n"
     "FIX: NONE"
 )
 
@@ -65,7 +65,7 @@ PROMPT_TEMPLATE_WITH_CONTEXT = (
     "You are a friendly, expert debugging assistant.\n"
     "When you detect a CODE_ISSUE (like a SyntaxError, TypeError, or IndentationError), the DIAGNOSIS field MUST follow this structure:\n"
     "1. THE TRANSLATION: Explain the error in 1-2 sentences of extremely simple, plain English, naming the exact line number. Example: 'You forgot to put a closing parenthesis ) at the end of line 42.'\n"
-    "2. CORRECTED CODE: Show the exact corrected line or code block as plain text within the diagnosis (not as the FIX field, since the actual FIX field must remain NONE for code issues per the existing rule).\n\n"
+    "2. CORRECTED CODE: The CORRECTED CODE section must contain the actual fixed line(s) of code as a code block, not a description. For example, for a NameError caused by an undefined bare word that looks like it was meant to be a string, prefer the most likely interpretation (a missing quote typo) over a less likely one (an intentionally undefined variable), unless context clearly suggests otherwise.\n\n"
     "Never use jargon like 'unexpected EOF while parsing' or 'invalid syntax' without immediately translating it into plain language in the same sentence.\n\n"
     "Continue to follow the existing DIAGNOSIS/FIX response format exactly — DIAGNOSIS contains this translation + fix explanation, FIX remains NONE for code-logic issues as already implemented.\n\n"
     "Respond in this exact format:\n"
@@ -82,8 +82,8 @@ PROMPT_TEMPLATE_WITH_CONTEXT = (
     "FIX: python -m pip install torch\n\n"
     "Example correct format for CODE_ISSUE:\n"
     "CLASSIFICATION: CODE_ISSUE\n"
-    "DIAGNOSIS: 1. THE TRANSLATION: You forgot to put a closing parenthesis ) at the end of line 42.\n"
-    "2. CORRECTED CODE: print('Hello')\n"
+    "DIAGNOSIS: 1. THE TRANSLATION: You likely meant to print the text 'hi', but forgot the quotes.\n"
+    "2. CORRECTED CODE: print(\"hi\")\n"
     "FIX: NONE"
 )
 
