@@ -442,8 +442,8 @@ def run(
         )
         raise typer.Exit(code=1)
         
-    if args:
-        first_token = args[0].lower()
+    if cmd.strip():
+        first_token = cmd.split()[0].lower() if cmd.split() else ""
         script_exts = {".py", ".js", ".ts", ".rb", ".sh", ".ps1", ".java", ".go"}
         runners = {"python", "python3", "node", "npm", "npx", "java", "cargo", "go", "bash", "sh", "ruby", "py"}
         
@@ -488,6 +488,15 @@ def run(
     is_local = str(config.get("local_only", "")).lower() == "true" or config.get("local_only") is True
     if is_local and provider.lower() in ["groq", "gemini"]:
         console.print("[bold red]Error:[/bold red] Local-only mode is enabled; cloud providers are disabled. Disable local-only mode to use cloud providers.")
+        raise typer.Exit(code=1)
+
+    # Fast-fail if cloud provider API keys are missing before we waste time running the command
+    import os
+    if provider.lower() == "groq" and not os.environ.get("GROQ_API_KEY"):
+        console.print("[bold red]Error:[/bold red] GROQ_API_KEY environment variable is not set. Please set it before running envfix with the Groq provider.")
+        raise typer.Exit(code=1)
+    if provider.lower() == "gemini" and not os.environ.get("GEMINI_API_KEY"):
+        console.print("[bold red]Error:[/bold red] GEMINI_API_KEY environment variable is not set. Please set it before running envfix with the Gemini provider.")
         raise typer.Exit(code=1)
 
     # ── Step 1: Run the original command ─────────────────────────────────
