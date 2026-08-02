@@ -59,7 +59,7 @@ class TestFindCachedFix:
         result = find_cached_fix(error, log_file=str(tmp_path / LOG_FILE))
         assert result is not None
         assert isinstance(result, CacheHit)
-        assert result.fix == "python -m pip install torch"
+        assert result.fix == ["python -m pip install torch"]
         assert result.score == pytest.approx(1.0)
         assert result.previously_worked is True
 
@@ -96,7 +96,7 @@ class TestFindCachedFix:
         result = find_cached_fix(error, log_file=str(tmp_path / LOG_FILE))
         assert result is not None
         assert result.previously_worked is False  # honest about outcome
-        assert result.fix == "python -m pip install non_existent_module_xyz"
+        assert result.fix == ["python -m pip install non_existent_module_xyz"]
 
     def test_unrelated_error_returns_none(self, tmp_path):
         """A completely different error should not produce a cache hit."""
@@ -128,7 +128,7 @@ class TestFindCachedFix:
         }])
         result = find_cached_fix(error, log_file=str(tmp_path / LOG_FILE))
         assert result is not None
-        assert result.fix == "python -m pip install numpy"
+        assert result.fix == ["python -m pip install numpy"]
         assert result.previously_worked is True
 
     def test_returns_best_match_among_multiple(self, tmp_path):
@@ -156,7 +156,7 @@ class TestFindCachedFix:
         ])
         result = find_cached_fix(target, log_file=str(tmp_path / LOG_FILE))
         assert result is not None
-        assert result.fix == "python -m pip install torch"  # higher score
+        assert result.fix == ["python -m pip install torch"]  # higher score
         assert result.previously_worked is True
 
 
@@ -265,7 +265,7 @@ class TestGetHistory:
         entry = history[0]
         assert entry["original_command"] == "python old.py"
         assert entry["error_text"] == "ImportError"
-        assert entry["fix_command"] == "pip install x"
+        assert entry["fix_command"] == ["pip install x"]
         assert entry["user_approved"] is True
         assert entry["fix_worked"] is True
         assert entry["source"] == "ollama"  # default for missing field
@@ -313,7 +313,7 @@ class TestCacheIntegration:
 
         hit = find_cached_fix(error, log_file=log_file)
         assert hit is not None, "Cache should return a hit for the identical error"
-        assert hit.fix == fix
+        assert hit.fix == (fix if isinstance(fix, list) else [fix])
         assert hit.score == pytest.approx(1.0)
         assert hit.previously_worked is True
 
@@ -342,4 +342,4 @@ class TestCacheIntegration:
             "so Ollama is not called again for the same problem"
         )
         assert hit.previously_worked is False  # honest: it didn't work last time
-        assert hit.fix == fix
+        assert hit.fix == (fix if isinstance(fix, list) else [fix])

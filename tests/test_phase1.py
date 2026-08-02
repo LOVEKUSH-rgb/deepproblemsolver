@@ -21,20 +21,20 @@ class TestParseResponse:
         r = _parse_response(raw)
         assert r.parsed_ok is True
         assert "CUDA" in r.diagnosis
-        assert r.fix == "python -m pip install torch==2.0.0+cu118"
+        assert r.fix == ["python -m pip install torch==2.0.0+cu118"]
 
     def test_case_insensitive(self):
         raw = "diagnosis: missing package\nfix: pip install numpy"
         r = _parse_response(raw)
         assert r.parsed_ok is True
-        assert r.fix == "python -m pip install numpy"
+        assert r.fix == ["python -m pip install numpy"]
 
     def test_extra_whitespace(self):
         raw = "DIAGNOSIS:   broken venv   \nFIX:   python -m venv .venv   "
         r = _parse_response(raw)
         assert r.parsed_ok is True
         assert r.diagnosis == "broken venv"
-        assert r.fix == "python -m venv .venv"
+        assert r.fix == ["python -m venv .venv"]
 
     def test_multiline_diagnosis(self):
         raw = (
@@ -44,8 +44,8 @@ class TestParseResponse:
         )
         r = _parse_response(raw)
         assert r.parsed_ok is True
-        assert "torch" in r.fix
-        assert r.fix.startswith("python -m pip")
+        assert "torch" in r.fix[0]
+        assert r.fix[0].startswith("python -m pip")
 
     def test_unparseable_falls_back_gracefully(self):
         raw = "I'm sorry, I don't understand the question."
@@ -65,7 +65,7 @@ class TestParseResponse:
         raw = "DIAGNOSIS: broken\nFIX: pip install torch\nAlso you might want to..."
         r = _parse_response(raw)
         assert r.parsed_ok is True
-        assert r.fix == "python -m pip install torch"
+        assert r.fix == ["python -m pip install torch"]
 
 
 # ── runner.py tests ───────────────────────────────────────────────────────────
@@ -132,7 +132,7 @@ class TestCleanFix:
         raw = "DIAGNOSIS: Missing module.\nFIX: `pip install numpy`"
         r = _parse_response(raw)
         assert r.parsed_ok is True
-        assert r.fix == "python -m pip install numpy"  # backticks stripped + pip normalised
+        assert r.fix == ["python -m pip install numpy"]  # backticks stripped + pip normalised
 
 
 # ── logger.py tests ───────────────────────────────────────────────────────────

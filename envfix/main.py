@@ -93,7 +93,7 @@ def _quote_join(tokens: List[str]) -> str:
 
 def _show_fix_panel(
     diagnosis: str,
-    fix: str,
+    fix: list[str],
     source: str,
     cache_score: Optional[float] = None,
 ) -> None:
@@ -103,13 +103,19 @@ def _show_fix_panel(
         if source == "cache" and cache_score is not None
         else ""
     )
+    
+    if len(fix) == 1:
+        fix_display = fix[0]
+    else:
+        fix_display = "\n".join(f"{i+1}. {cmd}" for i, cmd in enumerate(fix))
+        
     console.print(
         Panel(
             Text.assemble(
                 ("DIAGNOSIS\n", "bold magenta"),
                 (diagnosis + "\n\n", "white"),
-                ("FIX\n", "bold cyan"),
-                (fix, "bold white"),
+                (f"FIX ({len(fix)} steps)\n" if len(fix) > 1 else "FIX\n", "bold cyan"),
+                (fix_display, "bold white"),
             ),
             title=f"[bold]envfix Suggestion[/bold]{source_tag}",
             border_style="cyan",
@@ -325,20 +331,26 @@ def doctor_cmd(
 
     # Execute fixes sequentially
     for pf in proposed_fixes:
-        fix_cmd = pf["fix"]
-        if fix_cmd.strip() == "None (Code change required)":
+        fix_cmd_list = pf["fix"]
+        if fix_cmd_list == ["NONE"]:
             console.print(f"\n[bold yellow][WARNING] Skipping {pf['check'].name}:[/bold yellow] Manual code change required.")
             continue
             
-        console.print(f"\n[bold cyan]⚙ Applying fix for {pf['check'].name}:[/bold cyan] {fix_cmd}")
-        fix_stdout, fix_stderr, fix_rc = run_command(fix_cmd)
-        
-        if fix_stdout:
-            console.print(fix_stdout, end="")
-        if fix_stderr:
-            console.print(fix_stderr, end="")
+        worked = True
+        for i, step_cmd in enumerate(fix_cmd_list):
+            step_prefix = f" (Step {i+1}/{len(fix_cmd_list)})" if len(fix_cmd_list) > 1 else ""
+            console.print(f"\n[bold cyan]⚙ Applying fix for {pf['check'].name}{step_prefix}:[/bold cyan] {step_cmd}")
+            fix_stdout, fix_stderr, fix_rc = run_command(step_cmd)
             
-        worked = (fix_rc == 0)
+            if fix_stdout:
+                console.print(fix_stdout, end="")
+            if fix_stderr:
+                console.print(fix_stderr, end="")
+                
+            if fix_rc != 0:
+                worked = False
+                break
+                
         if worked:
             console.print(f"[bold green][OK] Fix applied successfully.[/bold green]")
         else:
@@ -348,7 +360,7 @@ def doctor_cmd(
             original_command="envfix doctor",
             error_text=pf["check"].warning,
             diagnosis=pf["diagnosis"],
-            fix_command=fix_cmd,
+            fix_command=fix_cmd_list,
             user_approved=True,
             fix_worked=worked,
             source=provider,
@@ -462,7 +474,7 @@ def run(
             elif first_token.endswith(".rb"):
                 suggestion = "ruby"
                 
-            console.print(f"\n[bold yellow]⚠ '{cmd}' looks like a filename, not a runnable command.[/bold yellow]")
+            console.print(f"\n[bold yellow][!] '{cmd}' looks like a filename, not a runnable command.[/bold yellow]")
             console.print(f"[yellow]Did you mean '[bold]{suggestion} {cmd}[/bold]'?[/yellow]\n")
             
             console.print(f"  [bold]1[/bold] - Run '{suggestion} {cmd}' instead (recommended)")
@@ -515,7 +527,7 @@ def run(
                 script_exts = {".py", ".js", ".ts", ".rb", ".sh", ".ps1", ".java", ".go"}
                 if any(first_token.endswith(ext) for ext in script_exts):
                     # It's likely the script just opened in an editor and immediately returned 0
-                    console.print("\n[bold yellow]⚠ Command returned 0 but produced no output. On Windows, this usually means the file was opened in an editor rather than executed.[/bold yellow]")
+                    console.print("\n[bold yellow][!] Command returned 0 but produced no output. On Windows, this usually means the file was opened in an editor rather than executed.[/bold yellow]")
                     console.print("[yellow]Please use a runner like 'python' instead of a bare filename.[/yellow]")
                     raise typer.Exit(code=1)
                     
@@ -594,57 +606,110 @@ def run(
                 
         if not community_hit:
             # ── Step 4a: Ask the LLM ─────────────────────────────────────────
-            provider_name = provider.capitalize()
-            display_model = get_actual_model(model, provider)
-            
-            _print_ollama_warning_if_needed(provider, display_model)
-            
-            console.print(
-                f"\n[bold yellow][AI] Asking {provider_name} ({display_model}) for a diagnosis...[/bold yellow]"
-            )
-            try:
-                trimmed_error = trim_stack_trace(
-                    error_text,
-                    ignore_patterns=config.get("ignore_patterns", [])
-                )
-                result = get_diagnosis(
-                    stderr=trimmed_error,
-                    model=model,
-                    category=category,
-                    code_context=code_context,
-                    provider=provider,
-                )
-            except RuntimeError as exc:
-                if str(exc).startswith("[!]"):
-                    console.print(f"\n[bold red]{exc}[/bold red]")
-                else:
-                    console.print(f"\n[bold red]Error reaching {provider_name}:[/bold red] {exc}")
-                raise typer.Exit(code=1)
-    
-            if not result.parsed_ok:
+            while True:
+                provider_name = provider.capitalize()
+                display_model = get_actual_model(model, provider)
+                
+                _print_ollama_warning_if_needed(provider, display_model)
+                
                 console.print(
-                    "\n[bold yellow][Warning] Could not parse a structured response. "
-                    "Showing raw model output:[/bold yellow]"
+                    f"\n[bold yellow][AI] Asking {provider_name} ({display_model}) for a diagnosis...[/bold yellow]"
                 )
-                console.print(
-                    Panel(result.raw_response, border_style="yellow", expand=False)
-                )
-                log_attempt(
-                    original_command=redact_secrets(cmd),
-                    redacted_secrets_count=locals().get('secrets_count1', 0) + locals().get('secrets_count2', 0),
-                    error_text=error_text,
-                    diagnosis=result.diagnosis,
-                    fix_command=result.fix,
-                    user_approved=False,
-                    fix_worked=None,
-                    source=provider,
-                    category=category,
-                    context_included=code_context is not None,
-                    provider=provider,
-                    classification=result.classification,
-                    mismatch_flagged=result.mismatch_flagged,
-                )
-                raise typer.Exit(code=1)
+                try:
+                    trimmed_error = trim_stack_trace(
+                        error_text,
+                        ignore_patterns=config.get("ignore_patterns", [])
+                    )
+                    result = get_diagnosis(
+                        stderr=trimmed_error,
+                        model=model,
+                        category=category,
+                        code_context=code_context,
+                        provider=provider,
+                    )
+                except RuntimeError as exc:
+                    if str(exc).startswith("[!]"):
+                        console.print(f"\n[bold red]{exc}[/bold red]")
+                    else:
+                        console.print(f"\n[bold red]Error reaching {provider_name}:[/bold red] {exc}")
+                    raise typer.Exit(code=1)
+        
+                if not result.parsed_ok:
+                    console.print(
+                        "\n[bold yellow][Warning] Could not parse a structured response. "
+                        "Showing raw model output:[/bold yellow]"
+                    )
+                    console.print(
+                        Panel(result.raw_response, border_style="yellow", expand=False)
+                    )
+                    log_attempt(
+                        original_command=redact_secrets(cmd),
+                        redacted_secrets_count=locals().get('secrets_count1', 0) + locals().get('secrets_count2', 0),
+                        error_text=error_text,
+                        diagnosis=result.diagnosis,
+                        fix_command=result.fix,
+                        user_approved=False,
+                        fix_worked=None,
+                        source=provider,
+                        category=category,
+                        context_included=code_context is not None,
+                        provider=provider,
+                        classification=result.classification,
+                        mismatch_flagged=result.mismatch_flagged,
+                    )
+                    raise typer.Exit(code=1)
+                
+                # Check for low quality in small models
+                is_low_quality = False
+                if provider.lower() == "ollama" and "3b" in model.lower():
+                    diag_words = len(result.diagnosis.split())
+                    vague_phrases = ["might be", "could be an issue with", "try checking", "appears that", "unclear"]
+                    has_vague = any(vp in result.diagnosis.lower() for vp in vague_phrases)
+                    is_env_with_no_fix = (result.classification == "ENVIRONMENT_ISSUE" and result.fix == "NONE")
+                    
+                    if diag_words < 15 or has_vague or is_env_with_no_fix:
+                        is_low_quality = True
+                        
+                if is_low_quality:
+                    console.print("\n[bold yellow][!] This diagnosis seems uncertain.[/bold yellow]")
+                    choices = ["1", "3"]
+                    console.print("Retry with a more capable model?")
+                    console.print("  [bold]1[/bold] - Retry with llama3.1:8b locally")
+                    
+                    import os
+                    if os.environ.get("GROQ_API_KEY"):
+                        choices.insert(1, "2")
+                        console.print("  [bold]2[/bold] - Retry with Groq (cloud)")
+                        
+                    console.print("  [bold]3[/bold] - Keep this answer")
+                    
+                    choice = Prompt.ask("\nSelect an option", choices=choices, default="3")
+                    if choice != "3":
+                        log_attempt(
+                            original_command=redact_secrets(cmd),
+                            redacted_secrets_count=locals().get('secrets_count1', 0) + locals().get('secrets_count2', 0),
+                            error_text=error_text,
+                            diagnosis=result.diagnosis,
+                            fix_command=result.fix,
+                            user_approved=False,
+                            fix_worked=None,
+                            source=provider,
+                            category=category,
+                            context_included=code_context is not None,
+                            provider=provider,
+                            entry_type="low_confidence_retry",
+                            classification=result.classification,
+                            mismatch_flagged=result.mismatch_flagged,
+                        )
+                        if choice == "1":
+                            model = "llama3.1:8b"
+                            provider = "ollama"
+                        elif choice == "2":
+                            model = "llama-3.3-70b-versatile"
+                            provider = "groq"
+                        continue
+                
+                break
     
             diagnosis = result.diagnosis
             fix = result.fix
@@ -652,16 +717,16 @@ def run(
             mismatch_flagged = False
 
             if _is_code_logic_exception(error_text, category):
-                if classification != "CODE_ISSUE" or fix != "NONE":
+                if classification != "CODE_ISSUE" or fix != ["NONE"]:
                     mismatch_flagged = True
                     result.mismatch_flagged = True
-                    console.print("\n[bold yellow]⚠ This suggested fix may not address the actual error type — review before running[/bold yellow]")
+                    console.print("\n[bold yellow][!] This suggested fix may not address the actual error type — review before running[/bold yellow]")
 
-            if fix != "NONE":
+            if fix != ["NONE"]:
                 _show_fix_panel(diagnosis, fix, source)
 
     # ── Step 4b: Dry-run preview ──────────────────────────────────────────
-    if fix.strip() == "NONE":
+    if fix == ["NONE"]:
         console.print("\n[bold yellow][Code Issue] This looks like a bug in your code, not an environment problem:[/bold yellow]")
         console.print(f"[dim]{diagnosis}[/dim]")
         
@@ -694,10 +759,11 @@ def run(
             "\n[bold red]⚠️ DANGEROUS COMMAND DETECTED[/bold red]\n"
             "[yellow]This command may delete files, change permissions, or execute remote code.[/yellow]"
         )
-        response = Prompt.ask("[bold]Type 'yes' to run this fix[/bold]", default="no")
+        response = Prompt.ask(f"[bold]Type 'yes' to run {'all steps' if len(fix) > 1 else 'this fix'}[/bold]", default="no")
         approved = (response.strip().lower() == "yes")
     else:
-        approved = Confirm.ask("\n[bold]Run this fix?[/bold]", default=False)
+        prompt_text = f"\n[bold]Run all {len(fix)} steps?[/bold]" if len(fix) > 1 else "\n[bold]Run this fix?[/bold]"
+        approved = Confirm.ask(prompt_text, default=False)
 
     if not approved:
         console.print("[dim]Exiting without changes.[/dim]")
@@ -738,35 +804,37 @@ def run(
             stash_created = True
 
     # ── Step 6: Run the fix, then re-run the original command ─────────────
-    console.print(f"\n[bold cyan]⚙ Applying fix:[/bold cyan] {fix}\n")
-    fix_stdout, fix_stderr, fix_rc = run_command(fix)
+    for i, step_cmd in enumerate(fix):
+        step_prefix = f" (Step {i+1}/{len(fix)})" if len(fix) > 1 else ""
+        console.print(f"\n[bold cyan]⚙ Applying fix{step_prefix}:[/bold cyan] {step_cmd}\n")
+        fix_stdout, fix_stderr, fix_rc = run_command(step_cmd)
 
-    if fix_stdout:
-        console.print(fix_stdout, end="")
-    if fix_stderr:
-        console.print(fix_stderr, end="")
+        if fix_stdout:
+            console.print(fix_stdout, end="")
+        if fix_stderr:
+            console.print(fix_stderr, end="")
 
-    if fix_rc != 0:
-        console.print(
-            "[bold red][X] Fix command itself failed "
-            f"(exit code {fix_rc}). Aborting retry.[/bold red]"
-        )
-        log_attempt(
-            original_command=redact_secrets(cmd),
-            redacted_secrets_count=locals().get('secrets_count1', 0) + locals().get('secrets_count2', 0),
-            error_text=error_text,
-            diagnosis=diagnosis,
-            fix_command=fix,
-            user_approved=True,
-            fix_worked=False,
-            source=source,
-            category=category,
-            context_included=code_context is not None,
-            provider=provider,
-            classification=classification,
-            mismatch_flagged=mismatch_flagged,
-        )
-        raise typer.Exit(code=1)
+        if fix_rc != 0:
+            console.print(
+                f"[bold red][X] Fix command failed at step {i+1} "
+                f"(exit code {fix_rc}). Aborting retry.[/bold red]"
+            )
+            log_attempt(
+                original_command=redact_secrets(cmd),
+                redacted_secrets_count=locals().get('secrets_count1', 0) + locals().get('secrets_count2', 0),
+                error_text=error_text,
+                diagnosis=diagnosis,
+                fix_command=fix,
+                user_approved=True,
+                fix_worked=False,
+                source=source,
+                category=category,
+                context_included=code_context is not None,
+                provider=provider,
+                classification=classification,
+                mismatch_flagged=mismatch_flagged,
+            )
+            raise typer.Exit(code=1)
 
     console.print(
         f"\n[bold cyan]🔄 Re-running original command:[/bold cyan] {cmd}\n"
@@ -787,7 +855,7 @@ def run(
         
         # ── Dependency auto-append feature ──────────────────────────────────────
         if "ModuleNotFoundError" in error_text or "ImportError" in error_text:
-            pkg = extract_package_name(fix)
+            pkg = extract_package_name(fix[-1]) if fix else None
             if pkg:
                 # Check for pyproject.toml
                 pyproject_path = os.path.join(os.getcwd(), "pyproject.toml")
@@ -980,19 +1048,20 @@ def diagnose_cmd(
         error_lines = [line.strip() for line in error_text.splitlines() if line.strip()]
         short_error = error_lines[-1][:200] if error_lines else "Unknown Error"
         
-        if fix_text.strip() == "None (Code change required)":
+        if fix_text == ["NONE"]:
             markdown_output = f"""## 🔧 envfix diagnosis{source_tag}
 **Error detected:** {short_error}
 **Diagnosis:** {diagnosis_text}
 
 ⚠️ *This appears to be a logic error in your code. Please manually edit the code as per the diagnosis.*"""
         else:
+            fix_md = "\n".join(fix_text)
             markdown_output = f"""## 🔧 envfix diagnosis{source_tag}
 **Error detected:** {short_error}
 **Diagnosis:** {diagnosis_text}
 **Suggested fix:**
 ```bash
-{fix_text}
+{fix_md}
 ```"""
         if output_file:
             with open(output_file, "w", encoding="utf-8") as out_f:

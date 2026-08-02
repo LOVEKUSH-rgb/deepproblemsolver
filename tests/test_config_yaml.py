@@ -81,7 +81,7 @@ def test_post_fix_hook_executes(mock_cache, mock_extract, mock_log, mock_print, 
         
         # Mock get_diagnosis to return a fake result
         with patch("envfix.main.get_diagnosis") as mock_diag:
-            mock_diag.return_value = MagicMock(parsed_ok=True, diagnosis="d", fix="fix", raw_response="raw")
+            mock_diag.return_value = MagicMock(parsed_ok=True, diagnosis="d", fix=["fix"], raw_response="raw")
             mock_ask.return_value = True # approve fix
             
             # Run CLI

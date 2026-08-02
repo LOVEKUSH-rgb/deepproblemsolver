@@ -20,7 +20,7 @@ PROMPT_TEMPLATE = (
     "First, classify this error as either:\n"
     "- ENVIRONMENT_ISSUE: caused by missing packages, version conflicts, PATH problems, or configuration — fixable with a terminal command\n"
     "- CODE_ISSUE: caused by a bug in the user's own code logic (undefined variables/functions, syntax errors, typos, incorrect logic) — NOT fixable by any terminal command\n\n"
-    "If ENVIRONMENT_ISSUE: give a diagnosis and one terminal command fix.\n"
+    "If ENVIRONMENT_ISSUE: give a diagnosis and a suggested terminal command fix. You may optionally propose a short sequence of up to 3 commands if genuinely necessary (e.g. uninstall -> clear cache -> reinstall), but most fixes should be a single command.\n"
     "If CODE_ISSUE: give a diagnosis explaining the likely bug and what the user should check or change in their code, then set FIX to exactly the string NONE. Do not invent a terminal command for a code-logic problem under any circumstances.\n\n"
     "You are a friendly, expert debugging assistant.\n"
     "When you detect a CODE_ISSUE (like a SyntaxError, TypeError, or IndentationError), the DIAGNOSIS field MUST follow this structure:\n"
@@ -35,7 +35,11 @@ PROMPT_TEMPLATE = (
     "IMPORTANT rules for the FIX command (if not NONE):\n"
     "- If it's a Python pip error, use 'python -m pip install ...' instead of 'pip install ...'\n"
     "- NO backticks, NO markdown formatting, NO surrounding quotes around the command\n"
-    "- Give a single runnable shell command only\n"
+    "- If multiple steps are required, place each command on a new line and prefix it with 'STEP X: '. For example:\n"
+    "  STEP 1: python -m pip uninstall torch\n"
+    "  STEP 2: python -m pip cache purge\n"
+    "  STEP 3: python -m pip install torch\n"
+    "- If only one step is required, you can just output the command directly without the 'STEP 1:' prefix.\n"
     "Example correct format:\n"
     "CLASSIFICATION: ENVIRONMENT_ISSUE\n"
     "DIAGNOSIS: The torch package is not installed.\n"
@@ -60,7 +64,7 @@ PROMPT_TEMPLATE_WITH_CONTEXT = (
     "First, classify this error as either:\n"
     "- ENVIRONMENT_ISSUE: caused by missing packages, version conflicts, PATH problems, or configuration — fixable with a terminal command\n"
     "- CODE_ISSUE: caused by a bug in the user's own code logic (undefined variables/functions, syntax errors, typos, incorrect logic) — NOT fixable by any terminal command\n\n"
-    "If ENVIRONMENT_ISSUE: give a diagnosis and one terminal command fix.\n"
+    "If ENVIRONMENT_ISSUE: give a diagnosis and a suggested terminal command fix. You may optionally propose a short sequence of up to 3 commands if genuinely necessary (e.g. uninstall -> clear cache -> reinstall), but most fixes should be a single command.\n"
     "If CODE_ISSUE: give a diagnosis explaining the likely bug and what the user should check or change in their code, then set FIX to exactly the string NONE. Do not invent a terminal command for a code-logic problem under any circumstances.\n\n"
     "You are a friendly, expert debugging assistant.\n"
     "When you detect a CODE_ISSUE (like a SyntaxError, TypeError, or IndentationError), the DIAGNOSIS field MUST follow this structure:\n"
@@ -75,7 +79,11 @@ PROMPT_TEMPLATE_WITH_CONTEXT = (
     "IMPORTANT rules for the FIX command (if not NONE):\n"
     "- If it's a Python pip error, use 'python -m pip install ...' instead of 'pip install ...'\n"
     "- NO backticks, NO markdown formatting, NO surrounding quotes around the command\n"
-    "- Give a single runnable shell command only\n"
+    "- If multiple steps are required, place each command on a new line and prefix it with 'STEP X: '. For example:\n"
+    "  STEP 1: python -m pip uninstall torch\n"
+    "  STEP 2: python -m pip cache purge\n"
+    "  STEP 3: python -m pip install torch\n"
+    "- If only one step is required, you can just output the command directly without the 'STEP 1:' prefix.\n"
     "Example correct format:\n"
     "CLASSIFICATION: ENVIRONMENT_ISSUE\n"
     "DIAGNOSIS: The torch package is not installed.\n"
@@ -123,7 +131,7 @@ class DiagnosisResult:
 
     classification: str
     diagnosis: str
-    fix: str
+    fix: list[str]
     raw_response: str
     parsed_ok: bool
     mismatch_flagged: bool = False
@@ -206,13 +214,25 @@ def _parse_response(raw: str) -> DiagnosisResult:
     if strict:
         classification = strict.group(1).strip()
         diagnosis = strict.group(2).strip()
-        fix_raw = strict.group(3).strip().splitlines()[0].strip()
+        fix_raw = strict.group(3).strip()
         
         # Check if the model explicitly returned NONE
-        if fix_raw.upper() == "NONE":
-            fix = "NONE"
+        if fix_raw.upper().startswith("NONE"):
+            fix = ["NONE"]
         else:
-            fix = _clean_fix(fix_raw)
+            fix = []
+            has_steps = False
+            for line in fix_raw.splitlines():
+                stripped = line.strip()
+                if not stripped: continue
+                if re.match(r"^STEP\s*\d+\s*:", stripped, re.IGNORECASE):
+                    has_steps = True
+                    stripped = re.sub(r"^STEP\s*\d+\s*:\s*", "", stripped, flags=re.IGNORECASE)
+                    fix.append(_clean_fix(stripped))
+                elif not has_steps and not fix:
+                    fix.append(_clean_fix(stripped))
+                elif not has_steps and fix:
+                    break
             
         return DiagnosisResult(
             classification=classification, diagnosis=diagnosis, fix=fix, raw_response=raw, parsed_ok=True
@@ -230,10 +250,18 @@ def _parse_response(raw: str) -> DiagnosisResult:
             diagnosis = re.sub(r"^DIAGNOSIS\s*:\s*", "", stripped, flags=re.IGNORECASE)
         elif fix is None and re.match(r"FIX\s*:", stripped, re.IGNORECASE):
             fix_raw = re.sub(r"^FIX\s*:\s*", "", stripped, flags=re.IGNORECASE)
-            if fix_raw.upper() == "NONE":
-                fix = "NONE"
+            if fix_raw.upper().startswith("NONE"):
+                fix = ["NONE"]
             else:
-                fix = _clean_fix(fix_raw)
+                fix = []
+                # For lenient parse, we only ever got the first line anyway unless we continue reading lines.
+                # Actually, lenient parse splits lines in the main loop, so fix_raw is just ONE line here!
+                # If it's a step, we parse it. But wait, if it's multiple steps, lenient parse won't work well
+                # because the loop continues and ignores subsequent lines since fix is no longer None.
+                # To fix this, lenient parse should just take the first line as it did before.
+                stripped_fix = fix_raw.strip()
+                stripped_fix = re.sub(r"^STEP\s*\d+\s*:\s*", "", stripped_fix, flags=re.IGNORECASE)
+                fix.append(_clean_fix(stripped_fix))
 
     if diagnosis and fix:
         return DiagnosisResult(

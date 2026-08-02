@@ -25,7 +25,7 @@ SEMANTIC_THRESHOLD = 0.80
 class CacheHit:
     """A previously verified fix that closely matches the current error."""
 
-    fix: str
+    fix: list[str]
     diagnosis: str
     score: float            # 0.0 – 1.0 similarity ratio
     original_command: str   # the command that originally triggered the error
@@ -106,10 +106,12 @@ def find_cached_fix(
             continue
 
         stored_error: str = entry.get("error_text") or entry.get("stderr", "")
-        fix: str          = entry.get("fix_command") or entry.get("fix", "")
+        fix = entry.get("fix_command") or entry.get("fix", "")
+        if isinstance(fix, str):
+            fix = [fix]
         diagnosis: str    = entry.get("diagnosis", "")
         original_cmd: str = entry.get("original_command") or entry.get("command", "")
-
+            
         if not stored_error or not fix:
             continue
             

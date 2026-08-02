@@ -45,15 +45,25 @@ def get_fix_preview(fix_cmd: str) -> Optional[str]:
     approving.
 
     Args:
-        fix_cmd: The shell command string to describe.
+        fix_cmd: The shell command string (or list of strings) to describe.
 
     Returns:
         A description string (may contain ⚠), or None if no extra text needed.
     """
-    for pattern, description in _RULES:
-        if re.search(pattern, fix_cmd, re.IGNORECASE):
-            return description  # can be None — that is intentional
-    return None   # no rule matched — also no preview
+    if isinstance(fix_cmd, str):
+        fix_cmd = [fix_cmd]
+        
+    previews = []
+    for cmd in fix_cmd:
+        for pattern, description in _RULES:
+            if re.search(pattern, cmd, re.IGNORECASE):
+                if description and description not in previews:
+                    previews.append(description)
+                break
+                
+    if not previews:
+        return None
+    return " | ".join(previews)
 
 
 def is_destructive(fix_cmd: str) -> bool:
@@ -61,6 +71,9 @@ def is_destructive(fix_cmd: str) -> bool:
     Check if a command contains highly destructive keywords.
     Used to prompt for explicit 'yes' confirmation.
     """
+    if isinstance(fix_cmd, str):
+        fix_cmd = [fix_cmd]
+        
     destructive_patterns = [
         r"rm\s+.*-[a-z]*r[a-z]*|-rf\b",
         r"\bdel\b",
@@ -70,8 +83,9 @@ def is_destructive(fix_cmd: str) -> bool:
         r"\bsudo\b",
         r"delete",
     ]
-    for pattern in destructive_patterns:
-        if re.search(pattern, fix_cmd, re.IGNORECASE):
-            return True
+    for cmd in fix_cmd:
+        for pattern in destructive_patterns:
+            if re.search(pattern, cmd, re.IGNORECASE):
+                return True
     return False
 
