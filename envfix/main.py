@@ -463,9 +463,18 @@ def run(
                 suggestion = "ruby"
                 
             console.print(f"\n[bold yellow]⚠ '{cmd}' looks like a filename, not a runnable command.[/bold yellow]")
-            console.print(f"[yellow]Did you mean '[bold]{suggestion} {cmd}[/bold]'? Running as-is may not execute your script correctly.[/yellow]")
-            if not Confirm.ask("Proceed anyway?", default=False):
+            console.print(f"[yellow]Did you mean '[bold]{suggestion} {cmd}[/bold]'?[/yellow]\n")
+            
+            console.print(f"  [bold]1[/bold] - Run '{suggestion} {cmd}' instead (recommended)")
+            console.print(f"  [bold]2[/bold] - Run '{cmd}' as-is anyway")
+            console.print(f"  [bold]3[/bold] - Cancel")
+            
+            choice = Prompt.ask("\nSelect an option", choices=["1", "2", "3"], default="1")
+            
+            if choice == "3":
                 raise typer.Exit(code=1)
+            elif choice == "1":
+                cmd = f"{suggestion} {cmd}"
         
     # Resolve defaults from config if omitted
     config = load_config()
