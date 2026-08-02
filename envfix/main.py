@@ -442,6 +442,31 @@ def run(
         )
         raise typer.Exit(code=1)
         
+    if args:
+        first_token = args[0].lower()
+        script_exts = {".py", ".js", ".ts", ".rb", ".sh", ".ps1", ".java", ".go"}
+        runners = {"python", "python3", "node", "npm", "npx", "java", "cargo", "go", "bash", "sh", "ruby", "py"}
+        
+        has_ext = any(first_token.endswith(ext) for ext in script_exts)
+        
+        import os
+        stem = os.path.splitext(first_token)[0]
+        is_runner = (stem in runners) or (first_token in runners)
+        
+        if has_ext and not is_runner:
+            suggestion = "python"
+            if first_token.endswith(".js") or first_token.endswith(".ts"):
+                suggestion = "node"
+            elif first_token.endswith(".sh"):
+                suggestion = "bash"
+            elif first_token.endswith(".rb"):
+                suggestion = "ruby"
+                
+            console.print(f"\n[bold yellow]⚠ '{cmd}' looks like a filename, not a runnable command.[/bold yellow]")
+            console.print(f"[yellow]Did you mean '[bold]{suggestion} {cmd}[/bold]'? Running as-is may not execute your script correctly.[/yellow]")
+            if not Confirm.ask("Proceed anyway?", default=False):
+                raise typer.Exit(code=1)
+        
     # Resolve defaults from config if omitted
     config = load_config()
     if not provider:
@@ -464,6 +489,18 @@ def run(
         console.print(stdout, end="")
 
     if returncode == 0:
+        # Detect Windows file association silent open
+        import os
+        if os.name == 'nt' and not stdout.strip() and not stderr.strip():
+            if args:
+                first_token = args[0].lower()
+                script_exts = {".py", ".js", ".ts", ".rb", ".sh", ".ps1", ".java", ".go"}
+                if any(first_token.endswith(ext) for ext in script_exts):
+                    # It's likely the script just opened in an editor and immediately returned 0
+                    console.print("\n[bold yellow]⚠ Command returned 0 but produced no output. On Windows, this usually means the file was opened in an editor rather than executed.[/bold yellow]")
+                    console.print("[yellow]Please use a runner like 'python' instead of a bare filename.[/yellow]")
+                    raise typer.Exit(code=1)
+                    
         console.print("\n[bold green]✓ Command succeeded — nothing to fix![/bold green]")
         return
 

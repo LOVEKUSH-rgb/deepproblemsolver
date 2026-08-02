@@ -1,3 +1,3 @@
 """envfix — Automatic Python/ML environment error fixer."""
 
-__version__ = "0.5.3"
+__version__ = "0.5.4"
