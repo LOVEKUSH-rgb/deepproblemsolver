@@ -100,6 +100,11 @@ ollama serve
 ### Step 4 — Install envfix
 
 ```bash
+pip install envfix
+```
+
+For the latest development version instead:
+```bash
 git clone https://github.com/LOVEKUSH-rgb/deepproblemsolver.git
 cd deepproblemsolver
 pip install -e .
@@ -178,6 +183,21 @@ envfix run npm install --provider gemini
 # Check your fix history
 envfix history
 envfix history --last 5
+```
+
+### Smart command detection
+
+If you accidentally run `envfix run f.py` instead of 
+`envfix run "python f.py"`, envfix detects that a bare filename 
+isn't a runnable command and offers to correct it:
+
+```
+⚠ 'f.py' looks like a filename, not a runnable command.
+Did you mean 'python f.py'?
+
+[1] Run 'python f.py' instead (recommended)
+[2] Run 'f.py' as-is anyway
+[3] Cancel
 ```
 
 ### What you'll see
@@ -280,14 +300,14 @@ envfix run <cmd>
 
 ### Supported Ecosystems
 
-`envfix` automatically detects and diagnoses errors in:
-- **Python**: pip, pytest, python scripts
+**Well-tested:**
+- **Python**: pip, pytest, python scripts — most thoroughly tested
 - **Node.js**: npm, yarn, node scripts
-- **Rust (Cargo)**: rustc compilation, missing crates
-- **Go**: go modules, compiler errors
-- **Java**: Maven, Gradle, JVM stack traces
-- **Docker**: Dockerfile build steps
-- **General CLI**: bash, powershell, missing binaries, permission issues
+
+**Implemented, not yet verified against real errors:**
+- **Rust (Cargo)**, **Go**, **Java** (Maven/Gradle), **Docker** — 
+  the detection logic and prompts exist, but haven't been tested 
+  against real toolchain errors yet. Treat as early/unproven.
 
 When you run `envfix`, it isolates code snippets from the stack trace and feeds them into the local model for a targeted diagnosis.
 
