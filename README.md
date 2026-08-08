@@ -358,6 +358,29 @@ envfix run "docker build -t my-app ." --category docker
 
 ---
 
+### Project-aware diagnosis with `envfix index`
+
+Run `envfix index` once in your project root to build a local, 
+offline index of your codebase. Future diagnoses will pull in 
+relevant snippets from your own code, not just generic patterns.
+
+- Skips files over 1MB
+- Never reads secret/credential files (`.env`, `*.pem`, `*.key`, 
+  `credentials.json`, etc.)
+- Warns before indexing unusually large directory trees (e.g. if 
+  accidentally run from a home folder instead of a project folder)
+- Re-run with `envfix index --update` to refresh after changes
+
+### Sharing a bug report
+
+If envfix can't solve an error, run `envfix share` to generate a 
+clean `bug_report.md` — OS info, Python version, the error, the 
+code snippet, and envfix's own diagnosis attempt, with secrets 
+already redacted. Paste it to a teammate, mentor, or a GitHub 
+issue.
+
+---
+
 ## Per-user history
 
 Every attempt is logged to `envfix_log_<username>.json` in the directory where
@@ -487,6 +510,10 @@ matching.
 ---
 
 ## Troubleshooting
+
+envfix checks PyPI in the background (at most once every 24 
+hours) and shows a one-line notice if a newer version is 
+available. This check fails silently if you're offline.
 
 | Symptom | Fix |
 |---|---|
