@@ -9,6 +9,7 @@ from typing import Any, Optional
 
 from envfix.embeddings import get_embedding
 from envfix.telemetry import send_telemetry
+from envfix.fingerprint import generate_fingerprint, get_error_type
 
 
 def get_log_file() -> str:
@@ -98,6 +99,10 @@ def log_attempt(
         "mismatch_flagged": mismatch_flagged,
     }
     
+    # Compute the new fingerprint
+    fingerprint = generate_fingerprint(error_text, category)
+    record["fingerprint"] = fingerprint
+    
     # Optionally compute and store a semantic embedding of the error text
     embedding = get_embedding(error_text)
     if embedding:
@@ -107,15 +112,8 @@ def log_attempt(
     log_data.append(record)
     _save_log(log_data, get_log_file())
     
-    # Try to deduce error type
-    error_lines = [line.strip() for line in error_text.splitlines() if line.strip()]
-    error_type = "Unknown"
-    if error_lines:
-        last_line = error_lines[-1]
-        if ":" in last_line:
-            error_type = last_line.split(":")[0].split(" ")[-1]
-        else:
-            error_type = last_line[:50]
+    # Deduced error type using new fingerprint logic
+    error_type = get_error_type(error_text)
 
     # Only send telemetry for reactive_fix attempts
     if entry_type == "reactive_fix":
@@ -125,7 +123,8 @@ def log_attempt(
             was_cache_hit=(source == "cache"),
             fix_applied=user_approved,
             fix_worked=fix_worked,
-            redacted_secrets_count=redacted_secrets_count
+            redacted_secrets_count=redacted_secrets_count,
+            fingerprint=fingerprint
         )
 
 
@@ -183,4 +182,5 @@ def _normalise_entry(entry: dict[str, Any]) -> dict[str, Any]:
         "context_included": bool(entry.get("context_included", False)),
         "provider":         entry.get("provider", "ollama"),
         "entry_type":       entry.get("entry_type", "reactive_fix"),
+        "fingerprint":      entry.get("fingerprint", ""),
     }

@@ -8,6 +8,7 @@ from typing import Optional
 
 from envfix.logger import get_log_file
 from envfix.embeddings import get_embedding, cosine_similarity
+from envfix.fingerprint import generate_fingerprint
 
 # Minimum similarity ratio (0–1) to consider a log entry a match.
 # 0.92 is deliberately conservative: we only surface cache hits when
@@ -82,6 +83,7 @@ def find_cached_fix(
     best_worked:   Optional[tuple[float, CacheHit]] = None
     best_approved: Optional[tuple[float, CacheHit]] = None
     
+    current_fingerprint = generate_fingerprint(error_text, category)
     current_embedding = get_embedding(error_text)
 
     for entry in log_data:
@@ -115,13 +117,20 @@ def find_cached_fix(
         if not stored_error or not fix:
             continue
             
+        stored_fingerprint = entry.get("fingerprint")
         stored_embedding = entry.get("embedding")
         is_semantic = False
         
-        if current_embedding and stored_embedding:
+        # 1. Exact Fingerprint Match
+        if stored_fingerprint and stored_fingerprint == current_fingerprint:
+            score = 1.0
+            hit_threshold = SIMILARITY_THRESHOLD
+        # 2. Semantic Embedding Fuzzy Match
+        elif current_embedding and stored_embedding:
             score = cosine_similarity(current_embedding, stored_embedding)
             is_semantic = True
             hit_threshold = SEMANTIC_THRESHOLD
+        # 3. String Similarity Fallback
         else:
             score = SequenceMatcher(None, error_text, stored_error).ratio()
             hit_threshold = SIMILARITY_THRESHOLD

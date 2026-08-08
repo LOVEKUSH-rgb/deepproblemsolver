@@ -7,7 +7,7 @@ try:
 except ImportError:
     import requests as httpx # fallback just in case, though google-genai pulled in requests/httpx
 
-def send_telemetry(error_type: str, provider_used: str, was_cache_hit: bool, fix_applied: bool, fix_worked: Optional[bool], redacted_secrets_count: int = 0):
+def send_telemetry(error_type: str, provider_used: str, was_cache_hit: bool, fix_applied: bool, fix_worked: Optional[bool], redacted_secrets_count: int = 0, fingerprint: str = ""):
     """
     Sends optional telemetry data to the team backend if configured.
     Fails silently on any error so as not to interrupt the user's workflow.
@@ -33,7 +33,8 @@ def send_telemetry(error_type: str, provider_used: str, was_cache_hit: bool, fix
         "fix_applied": fix_applied,
         "fix_worked": fix_worked,
         "installation_id": config.get("installation_id", ""),
-        "redacted_secrets_count": redacted_secrets_count
+        "redacted_secrets_count": redacted_secrets_count,
+        "fingerprint": fingerprint
     }
     
     headers = {
