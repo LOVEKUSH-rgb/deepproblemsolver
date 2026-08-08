@@ -226,6 +226,37 @@ Did you mean 'python f.py'?
 Run this fix? [y/n] (n): y
 ```
 
+### Code bugs vs. environment issues
+
+envfix tells the difference between a bug in your own code and a missing dependency — for code bugs, it explains the fix in plain English instead of proposing an unrelated terminal command:
+
+```
+▶ Running: python f.py
+
+╭──────────── ✗ Command Failed ────────────╮
+│ Traceback (most recent call last):       │
+│   File "f.py", line 1, in <module>       │
+│     print(hi)                            │
+│ NameError: name 'hi' is not defined      │
+╰──────────────────────────────────────────╯
+
+🤖 Asking Ollama (llama3.1:8b) for a diagnosis…
+
+╭────────── envfix Suggestion ─────────────╮
+│ DIAGNOSIS                                │
+│ You likely meant to print the string     │
+│ 'hi', but forgot the quotes around it.   │
+│                                          │
+│ FIX                                      │
+│ NONE                                     │
+│                                          │
+│ CORRECTED CODE                           │
+│ print("hi")                              │
+╰──────────────────────────────────────────╯
+
+[WARNING] Skipping f.py: Manual code change required.
+```
+
 If the same (or very similar) error has appeared before, `envfix` skips the
 model call entirely and shows the cached suggestion instead:
 
